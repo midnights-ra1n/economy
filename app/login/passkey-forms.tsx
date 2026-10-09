@@ -8,7 +8,7 @@ import { authenticationOptions, login, registrationOptions, setup, verifyAuthent
 
 const btn = "w-full rounded-xl bg-ink px-4 py-3 font-medium text-paper transition-transform active:scale-[0.98] disabled:opacity-50";
 const ghost = "w-full rounded-xl border border-line px-4 py-3 font-medium transition-colors hover:bg-surface disabled:opacity-50";
-const input = "w-full rounded-xl border border-line bg-surface px-4 py-3 text-base focus:border-brass focus:outline-none";
+const input = "w-full rounded-xl border border-line bg-surface px-4 py-3 text-base focus:border-accent focus:outline-none";
 
 function Input({ label, ...props }: React.ComponentProps<"input"> & { label: string }) {
   return (

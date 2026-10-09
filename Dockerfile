@@ -17,4 +17,5 @@ COPY --from=build --chown=node:node /app/public ./public
 USER node
 VOLUME /data
 EXPOSE 3000
-CMD ["node", "server.js"]
+# Absolute path: some OCI runtimes (Proxmox LXC) do not apply WORKDIR.
+CMD ["node", "/app/server.js"]

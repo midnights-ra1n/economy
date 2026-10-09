@@ -7,8 +7,8 @@ export default function manifest(): MetadataRoute.Manifest {
     description: "Gestion de budget personnel",
     start_url: "/",
     display: "standalone",
-    background_color: "#eef2ec",
-    theme_color: "#16302b",
+    background_color: "#f6f6f7",
+    theme_color: "#f6f6f7",
     lang: "fr",
     icons: [
       { src: "/icon-192.png", sizes: "192x192", type: "image/png" },

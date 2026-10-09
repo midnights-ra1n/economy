@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getAccounts, getCategories, getTransactions, postDueRecurring } from "@/lib/budget";
+import { getAccounts, getTransactions, postDueRecurring } from "@/lib/budget";
 import { addMonths, localToday, ym } from "@/lib/forecast";
-import { addTransaction } from "../actions";
-import { Card, DeleteButton, Empty, EntryForm, Money, Row, listClass } from "../ui";
+import { Card, DeleteButton, Empty, Money, Row, listClass } from "../ui";
 
 const arrow = "grid size-9 place-items-center rounded-full border border-line transition-colors hover:bg-surface";
 
@@ -20,11 +19,7 @@ export default async function Operations({ searchParams }: PageProps<"/operation
 
   return (
     <>
-      {accounts.length ? (
-        <Card title="Nouvelle opération">
-          <EntryForm action={addTransaction} accounts={accounts} categories={getCategories()} when="date" today={today} />
-        </Card>
-      ) : (
+      {!accounts.length && (
         <Empty>Ajoutez d&apos;abord un <Link href="/comptes" className="text-ink underline">compte</Link>.</Empty>
       )}
 
@@ -46,7 +41,7 @@ export default async function Operations({ searchParams }: PageProps<"/operation
               </Row>
             ))}
           </ul>
-        ) : <Empty>Aucune opération ce mois-ci.</Empty>}
+        ) : <Empty>Aucune opération ce mois-ci. Ajoutez-en une avec le bouton +.</Empty>}
       </Card>
     </>
   );

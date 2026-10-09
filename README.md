@@ -25,6 +25,24 @@ Ouvrez l'URL, saisissez le **code d'initialisation** affiché dans les logs, pui
 
 Les données sont stockées dans le volume `economy-data` (`/data/economy.db`).
 
+## Conteneur LXC sur Proxmox (image OCI)
+
+L'image construite par le `Dockerfile` est une image OCI standard. Proxmox VE 9.1 ou plus récent sait créer un conteneur LXC à partir d'une archive OCI.
+
+1. Construisez l'archive sur une machine qui a Docker ou Podman. Le `--platform` est indispensable depuis un Mac Apple Silicon, car un serveur Proxmox est en x86-64.
+
+   ```bash
+   docker build --platform linux/amd64 -t economy .
+   docker save economy -o economy-oci.tar          # Docker 25+ : archive au format OCI
+   # ou : podman build --platform linux/amd64 -t economy . && podman save --format oci-archive -o economy-oci.tar economy
+   ```
+
+2. Dans Proxmox, envoyez `economy-oci.tar` dans un stockage, rubrique **CT Templates → Upload**.
+3. Créez le conteneur (**Create CT**) avec ce template. Ajoutez un **point de montage sur `/data`** : sans lui, la base est perdue si le conteneur est recréé.
+4. Ajoutez la variable d'environnement `ORIGIN=https://budget.mondomaine.fr` dans les options du conteneur. `DATA_DIR`, `PORT` et `TZ` sont déjà définis par l'image.
+5. Le processus tourne sous l'utilisateur `node` (uid 1000), donc `/data` doit lui appartenir. Dans un conteneur non privilégié, cet uid correspond à 101000 sur l'hôte : `chown 101000:101000 <dossier du point de montage>`.
+6. Démarrez le conteneur. Le code d'initialisation s'affiche dans sa console.
+
 ## Démarrage sans Docker
 
 Node.js 24 ou plus récent est requis.

@@ -1,26 +1,26 @@
 @import "tailwindcss";
 
-/* Banknote palette: pine ink on mint-grey paper, brass accent. */
+/* Neutral, cool greys with a single cobalt accent used sparingly (charts, active tab, add button). */
 :root {
-  --paper: #eef2ec;
-  --surface: #f8faf6;
-  --ink: #16302b;
-  --muted: #5b6f68;
-  --line: #d3ddd5;
-  --brass: #b8912a;
-  --gain: #2f6b4f;
-  --loss: #b23a48;
+  --paper: #f6f6f7;
+  --surface: #ffffff;
+  --ink: #1c1c1f;
+  --muted: #6e6e76;
+  --line: #e6e6ea;
+  --accent: #3e5bea;
+  --gain: #1f9d5b;
+  --loss: #d64545;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --paper: #0f1f1b;
-    --surface: #152a25;
-    --ink: #e6ede6;
-    --muted: #94a79f;
-    --line: #24403a;
-    --brass: #d4ae4c;
-    --gain: #74c39a;
-    --loss: #e57a86;
+    --paper: #0f0f11;
+    --surface: #18181b;
+    --ink: #f2f2f3;
+    --muted: #9a9aa3;
+    --line: #2a2a30;
+    --accent: #8b9dff;
+    --gain: #4cc785;
+    --loss: #f07a7a;
   }
 }
 
@@ -30,26 +30,25 @@
   --color-ink: var(--ink);
   --color-muted: var(--muted);
   --color-line: var(--line);
-  --color-brass: var(--brass);
+  --color-accent: var(--accent);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
-  --font-sans: var(--font-hanken);
-  --font-display: var(--font-young-serif);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
 }
 
 body {
-  @apply bg-paper text-ink font-sans;
-  font-variant-numeric: tabular-nums;
+  @apply bg-paper font-sans text-ink;
 }
 
 :focus-visible {
-  outline: 2px solid var(--brass);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
 
-/* The one orchestrated moment: on the dashboard, the sentence rises, then the forecast curve draws itself. */
+/* Dashboard load: the sentence rises, then the curves reveal left to right. */
 @keyframes rise {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
 }
 @keyframes reveal {
   from { clip-path: inset(0 100% 0 0); }
@@ -61,16 +60,23 @@ body {
 @keyframes grow {
   from { transform: scaleX(0); }
 }
-.anim-rise { animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-rise { animation: rise 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 /* Clip reveal rather than stroke-dash: dashes break when the SVG is stretched to the page width. */
-.anim-reveal { animation: reveal 1.4s 0.35s cubic-bezier(0.6, 0, 0.2, 1) both; }
+.anim-reveal { animation: reveal 1.3s 0.3s cubic-bezier(0.6, 0, 0.2, 1) both; }
 .anim-pop { animation: pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
-.anim-grow { transform-origin: left; animation: grow 0.9s 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+.anim-grow { transform-origin: left; animation: grow 0.9s 0.5s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
 
-/* Route changes crossfade (React <ViewTransition> in the app layout). */
+/* Quick-add dialog: bottom sheet on mobile, centered panel on desktop; slides in when opened. */
+dialog.sheet {
+  transition: translate 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.2s, overlay 0.3s allow-discrete, display 0.3s allow-discrete;
+}
+dialog.sheet:not([open]) { translate: 0 24px; opacity: 0; }
+@starting-style { dialog.sheet[open] { translate: 0 24px; opacity: 0; } }
+dialog.sheet::backdrop { background: rgb(0 0 0 / 0.35); backdrop-filter: blur(2px); }
+
 ::view-transition-old(root),
 ::view-transition-new(root) {
-  animation-duration: 180ms;
+  animation-duration: 160ms;
 }
 
 @media (prefers-reduced-motion: reduce) {

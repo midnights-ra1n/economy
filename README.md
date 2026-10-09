@@ -41,12 +41,11 @@ A ready-made image is published on `ghcr.io/midnights-ra1n/economy` for **x86-64
 mkdir economy && cd economy
 curl -O https://raw.githubusercontent.com/midnights-ra1n/economy/stable/docker-compose.yml
 ORIGIN=https://budget.example.com docker compose up -d
-docker compose logs economy        # shows the setup code
 ```
 
-Open the URL, type the **setup code** from the logs, and choose your username and password. That first account is the **administrator**.
+Open the URL and create your account: the first one is the **administrator**.
 
-The setup code is regenerated at every start until an account exists, then disappears. Nobody can sign up on their own afterwards: the administrator creates the other accounts.
+For safety, the account creation screen only stays open for **10 minutes after the container starts**. If no account is created by then, it locks, so a stranger who finds a fresh install cannot claim it. Restart the container to reopen it. Once the first account exists, nobody can sign up on their own: the administrator creates the other accounts.
 
 > To try it locally, run `docker compose up -d` without `ORIGIN` and open http://localhost:3000.
 
@@ -92,13 +91,9 @@ The image is a standard OCI image, and Proxmox VE 9.1 or later can create an LXC
 
    A bind mount from the host is never deleted with the container. Avoid a Proxmox-managed volume, which is destroyed along with the container.
 4. Add the environment variable `ORIGIN=https://budget.example.com` in the container options. `DATA_DIR`, `PORT` and `TZ` are already set by the image.
-5. Start the container, then read the setup code from the host:
+5. Start the container and create your account in the browser within 10 minutes (restart the container if you miss it).
 
-   ```bash
-   cat /srv/economy/economy.log
-   ```
-
-   Proxmox keeps no container logs, and the **Console** tab only shows what the app prints after you open it, in **console** mode (`pct set <id> --cmode console`, then restart). That is why the app also writes its messages to `/data/economy.log`, and repeats the setup code every minute until the first account is created.
+   Proxmox keeps no container logs, and the **Console** tab only shows what the app prints after you open it, in **console** mode (`pct set <id> --cmode console`, then restart). The app's messages are also written to `/data/economy.log`, which you can read from the host: `cat /srv/economy/economy.log`.
 
 To update, create a container from the new image with the same mount: it finds all the data.
 
@@ -125,6 +120,7 @@ The database is created in `./data` (change it with `DATA_DIR`).
 | `TZ`       | `Europe/Paris` in Docker         | Time zone used for monthly due dates.                                   |
 | `PORT`     | `3000`                           | HTTP port.                                                              |
 | `UPDATE_CHECK` | `true`                       | Set to `false` to stop checking GitHub for new releases.                |
+| `SETUP_WINDOW_MINUTES` | `10`                 | How long the first-account screen stays open after a start or a reset.  |
 
 ## Putting it online
 
@@ -146,7 +142,7 @@ The database is the app's only state. It lives in `/data`, outside the image, so
 
 - **Docker Compose**: the named volume `economy-data` survives restarts, updates (`docker compose pull`, `docker compose up -d`) and rebuilds. Only `docker compose down -v` deletes it, so never add `-v`.
 - **Schema updates**: a new version upgrades the existing database in place at startup (the version is tracked in `PRAGMA user_version`), keeping all data. For example, a single-user install became multi-user, and its owner became the administrator.
-- **Logs**: the app's messages (start, version, setup code, warnings) go to the container output and to `/data/economy.log` (rotated at 1 MB).
+- **Logs**: the app's messages (start, version, account creation deadline, warnings) go to the container output and to `/data/economy.log` (rotated at 1 MB).
 - **Check**: every start logs `[economy] Database /data/economy.db: N user(s).`, with a warning if `/data` is not a mounted volume. The admin panel also shows **Storage: Persistent** or **Ephemeral**.
 - **Backups**: **Settings → Export a backup (JSON)** for your own data, or copy the whole database: `sqlite3 /data/economy.db ".backup economy-backup.db"`. Export before a major update.
 
@@ -179,7 +175,7 @@ On Proxmox, pull the new image and recreate the container with the same `/data` 
   - **erase their banking data** while keeping their login
   - delete them
 - An administrator can neither demote nor delete themselves, so there is always at least one administrator.
-- **Reset the app**, at the bottom of the admin panel, deletes every user and all data. It asks you to type `RESET` (or `RÉINITIALISER`) and your password, then prints a new setup code in the logs.
+- **Reset the app**, at the bottom of the admin panel, deletes every user and all data. It asks you to type `RESET` (or `RÉINITIALISER`) and your password, then opens the first-account screen again for 10 minutes.
 - Every user can also erase their own banking data from **Settings**, with their password.
 
 ## Languages
@@ -190,8 +186,9 @@ Strings live in [`lib/i18n.ts`](lib/i18n.ts). To add a language, add a dictionar
 
 ## Security
 
-- No secret is readable in the database. Passwords are hashed with salted **scrypt**; the setup code and session tokens with SHA-256.
+- No secret is readable in the database. Passwords are hashed with salted **scrypt**, session tokens with SHA-256.
 - The database is never served over the web. Its folder is `700` and its files `600`, so only the app's system user can read them.
+- The first account can only be created during the first 10 minutes after the server starts (or after a reset). Creating it is serialized, so two simultaneous attempts cannot both become administrator.
 - After 5 failed sign-ins, an IP address is locked out for 15 minutes.
 - Sessions are random tokens in an `HttpOnly`, `SameSite=Lax` cookie (`Secure` over HTTPS) and expire after 30 days. Changing a password signs out the other devices.
 - WebAuthn challenges are stored server-side, single-use, and expire after 5 minutes.
@@ -213,7 +210,7 @@ Built with Next.js 16 (App Router, server actions), React 19, Tailwind CSS 4, `n
 ```
 app/(app)/     signed-in pages: dashboard, transactions, planning, accounts, settings, admin
 app/login/     setup, sign-in and passkeys
-lib/db.ts      SQLite connection, schema migrations, setup code
+lib/db.ts      SQLite connection, schema migrations, first-account window, logs
 lib/auth.ts    sessions, passwords, rate limiting
 lib/budget.ts  per-user budget queries
 lib/forecast.ts  projection logic (pure, tested)

@@ -2,7 +2,7 @@ import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { cache } from "react";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
-import { db, getSetting, sha256 } from "./db";
+import { db, sha256 } from "./db";
 import type { Locale } from "./i18n";
 
 export const ORIGIN = (process.env.ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
@@ -86,11 +86,6 @@ export const isSetUp = () => !!db.prepare("SELECT 1 FROM users LIMIT 1").get();
 export const hasPasskey = () => !!db.prepare("SELECT 1 FROM credentials LIMIT 1").get();
 
 const safeEqual = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
-
-export function checkSetupCode(code: string): boolean {
-  const hash = getSetting("setup_code_hash");
-  return !!hash && safeEqual(Buffer.from(sha256(code.trim().toLowerCase())), Buffer.from(hash));
-}
 
 const field = (form: FormData, key: string) => String(form.get(key) ?? "");
 const MIN_PASSWORD = 10;

@@ -34,14 +34,13 @@ function useKeepFieldsAction(fn: (s: FormState, f: FormData) => Promise<FormStat
 const Message = ({ text }: { text?: string }) =>
   text ? <p role="alert" className="anim-rise text-sm text-loss">{text}</p> : null;
 
-/** First run: the setup code is printed in the container logs (docker compose logs). */
+/** First run: creates the administrator account (open for a few minutes after the server starts). */
 export function SetupForm() {
   const { state, onSubmit, pending } = useKeepFieldsAction(setup);
   const { t } = useT();
   return (
     <form onSubmit={onSubmit} className="space-y-4">
-      <Input label={t("login.setupCode")} name="code" required autoComplete="off" spellCheck={false} />
-      <Input label={t("login.username")} name="username" required maxLength={40} autoComplete="username" />
+      <Input label={t("login.username")} name="username" required maxLength={40} autoComplete="username" autoFocus />
       <Input label={t("login.passwordMin")} name="password" type="password" required minLength={10} autoComplete="new-password" />
       <Input label={t("login.confirm")} name="confirm" type="password" required minLength={10} autoComplete="new-password" />
       <button className={btn} disabled={pending}>{pending ? t("login.creating") : t("login.create")}</button>

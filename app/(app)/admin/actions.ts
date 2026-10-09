@@ -6,7 +6,7 @@ import {
   assertNotLocked, destroyAllSessions, destroySession, hashPassword, newPassword, newUsername, recordFailure, requireAdmin, verifyPassword,
 } from "@/lib/auth";
 import { wipeBudget } from "@/lib/budget";
-import { db, issueSetupCode, tx } from "@/lib/db";
+import { db, openSetupWindow, tx } from "@/lib/db";
 import { getT } from "@/lib/locale";
 
 type State = { error?: string; ok?: string };
@@ -88,7 +88,7 @@ export async function deleteUser(form: FormData) {
   revalidatePath("/admin");
 }
 
-/** Factory reset: every user and all data go, a new setup code is printed in the logs. */
+/** Factory reset: every user and all data go, and the first-account screen opens again for a while. */
 export async function resetApp(_: State, form: FormData): Promise<State> {
   const admin = await requireAdmin();
   const { te } = await getT();
@@ -99,10 +99,10 @@ export async function resetApp(_: State, form: FormData): Promise<State> {
     await destroySession();
     tx(() => {
       db.exec("DELETE FROM users; DELETE FROM challenges; DELETE FROM sessions; DELETE FROM settings;");
-      issueSetupCode();
     });
     // Leave no trace of the old data in the WAL or in free pages.
     db.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
+    openSetupWindow(db, true);
   } catch (e) {
     return { error: te(e) };
   }

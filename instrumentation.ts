@@ -1,4 +1,4 @@
-// Opens the database at server start, so the first-run setup code shows in the logs right away,
+// Opens the database at server start, so the first-account deadline shows in the logs right away,
 // and starts the first update check so the admin sees its result without waiting.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;

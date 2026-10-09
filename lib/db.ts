@@ -1,6 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
-import { createHash, randomBytes } from "node:crypto";
+import { createHash } from "node:crypto";
 import path from "node:path";
 
 const dir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
@@ -56,7 +56,7 @@ function open() {
     const { n } = d.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
     log(`Database ${file}: ${n} user(s).`);
     if (!persistent()) log(`WARNING: ${dir} is not a mounted volume. Data will be lost when the container is recreated.`);
-    if (!n) issueSetupCode(d);
+    if (!n) openSetupWindow(d);
   }
   return d;
 }
@@ -91,6 +91,8 @@ function migrate(d: DatabaseSync) {
     },
     // v2: interface language per user (null: follow the browser).
     () => d.exec("ALTER TABLE users ADD COLUMN locale TEXT CHECK (locale IN ('fr','en'))"),
+    // v3: the setup code is gone, replaced by a time window after start.
+    () => d.exec("DELETE FROM settings WHERE key = 'setup_code_hash'"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {
@@ -108,25 +110,36 @@ function migrate(d: DatabaseSync) {
   }
 }
 
-/** No user yet: whoever reaches the public URL first must not be able to claim the app.
- * A fresh code per start (and after a reset), stored hashed: only the server logs ever show it. */
-export function issueSetupCode(d = db) {
-  const code = randomBytes(6).toString("hex");
-  d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_code_hash', ?)").run(sha256(code));
-  log(`No account yet. Setup code: ${code}`);
-  // A console attached after startup (Proxmox, `docker attach`) has no history: repeat it until it is used.
-  const g = globalThis as unknown as { setupReminder?: NodeJS.Timeout };
-  clearInterval(g.setupReminder);
-  g.setupReminder = setInterval(() => {
-    const used = !d.prepare("SELECT 1 FROM settings WHERE key = 'setup_code_hash'").get();
-    if (used) clearInterval(g.setupReminder);
-    else console.log(`[economy] No account yet. Setup code: ${code}`);
-  }, 60e3);
-  g.setupReminder.unref();
+// First account: the creation screen only works for a while after the server (container) starts, or after a
+// factory reset. Past that, an exposed but never configured instance cannot be claimed by a stranger;
+// restarting the container reopens it.
+// Functions only, no top-level consts: open() calls this at module init (temporal dead zone).
+function setupWindow() {
+  const g = globalThis as unknown as { setupOpenedAt?: number; setupTimer?: NodeJS.Timeout };
+  g.setupOpenedAt ??= performance.timeOrigin; // process start
+  const minutes = Number(process.env.SETUP_WINDOW_MINUTES) || 10;
+  return { g, minutes, deadline: g.setupOpenedAt + minutes * 60e3 };
+}
+
+/** Minutes left to create the first account (0 once closed). Only meaningful while there is no user. */
+export function setupMinutesLeft() {
+  return Math.max(0, Math.ceil((setupWindow().deadline - Date.now()) / 60e3));
+}
+
+/** Logs the account creation deadline; `restart` (factory reset) gives a full window from now. */
+export function openSetupWindow(d = db, restart = false) {
+  const { g } = setupWindow();
+  if (restart) g.setupOpenedAt = Date.now();
+  const { minutes, deadline } = setupWindow();
+  log(`No account yet. Create the first one in the browser before ${new Date(deadline).toISOString()} (${minutes} min).`);
+  clearTimeout(g.setupTimer);
+  g.setupTimer = setTimeout(() => {
+    if (!d.prepare("SELECT 1 FROM users LIMIT 1").get()) log("Account creation is now locked for safety. Restart the container to reopen it.");
+  }, deadline - Date.now()).unref();
 }
 
 /**
- * Logs to stdout and to DATA_DIR/economy.log (mode 600, rotated at 1 MB), so the setup code and startup
+ * Logs to stdout and to DATA_DIR/economy.log (mode 600, rotated at 1 MB), so startup
  * messages can be read from the volume where the platform shows no container logs (Proxmox LXC).
  */
 export function log(message: string) {

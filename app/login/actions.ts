@@ -10,12 +10,12 @@ import {
 } from "@simplewebauthn/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db } from "@/lib/db";
+import { db, setupMinutesLeft, tx } from "@/lib/db";
 import { isLocale } from "@/lib/i18n";
 import { LOCALE_COOKIE, getT } from "@/lib/locale";
 import { cookies } from "next/headers";
 import {
-  ORIGIN, RP_ID, assertNotLocked, checkSetupCode, clearFailures, createSession, destroyAllSessions, destroySession,
+  ORIGIN, RP_ID, assertNotLocked, clearFailures, createSession, destroyAllSessions, destroySession,
   hashPassword, isSetUp, newPassword, newUsername, recordFailure, requireUser, saveChallenge, takeChallenge, verifyPassword,
 } from "@/lib/auth";
 
@@ -32,22 +32,18 @@ async function attempt(fn: () => Promise<FormState | void>): Promise<FormState> 
   }
 }
 
-/** First run: the setup code from the container logs proves the caller owns the server. */
+/** First run: only possible in the minutes after the server starts (see setupMinutesLeft). */
 export async function setup(_: FormState, form: FormData): Promise<FormState> {
   const state = await attempt(async () => {
-    if (isSetUp()) throw new Error("err.exists");
-    await assertNotLocked();
-    if (!checkSetupCode(field(form, "code"))) {
-      await recordFailure();
-      throw new Error("err.setupCode");
-    }
+    if (!setupMinutesLeft()) throw new Error("err.setupClosed");
     const username = newUsername(form);
-    const password = newPassword(form);
-    // The first account is the admin: it manages the other users.
-    const { lastInsertRowid } = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(username, hashPassword(password));
-    db.prepare("DELETE FROM settings WHERE key = 'setup_code_hash'").run();
-    await clearFailures();
-    await createSession(Number(lastInsertRowid));
+    const password = hashPassword(newPassword(form));
+    // Inside the write lock: two simultaneous submissions cannot both become the first admin.
+    const uid = tx(() => {
+      if (isSetUp()) throw new Error("err.exists");
+      return Number(db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(username, password).lastInsertRowid);
+    });
+    await createSession(uid);
   });
   if (state.error) return state;
   redirect("/");

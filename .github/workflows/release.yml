@@ -27,7 +27,7 @@ jobs:
           node-version: 24
       - run: corepack enable && pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm exec tsc --noEmit
+      - run: pnpm typecheck # generates the route types (PageProps…) first: they are not committed
       - run: pnpm test
 
   image:

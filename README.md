@@ -192,6 +192,7 @@ Strings live in [`lib/i18n.ts`](lib/i18n.ts). To add a language, add a dictionar
 pnpm dev      # http://localhost:3000
 pnpm test     # unit tests: forecast, backup format, migrations, translations
 pnpm lint
+pnpm typecheck
 ```
 
 Built with Next.js 16 (App Router, server actions), React 19, Tailwind CSS 4, `node:sqlite` and `@simplewebauthn`. Fonts: Geist and Geist Mono.

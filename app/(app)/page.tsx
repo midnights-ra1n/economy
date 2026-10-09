@@ -20,10 +20,10 @@ function cumulative(txs: Transaction[], days: number): number[] {
 }
 
 export default async function Dashboard() {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const today = localToday();
-  postDueRecurring(today);
-  const accounts = getAccounts();
+  postDueRecurring(uid, today);
+  const accounts = getAccounts(uid);
   if (!accounts.length) {
     return (
       <section className="anim-rise space-y-4 pt-6">
@@ -33,9 +33,9 @@ export default async function Dashboard() {
       </section>
     );
   }
-  const short = new Intl.NumberFormat("fr-FR", { style: "currency", currency: getCurrency(), maximumFractionDigits: 0 });
-  const recurring = getRecurring();
-  const planned = getPlanned();
+  const short = new Intl.NumberFormat("fr-FR", { style: "currency", currency: await getCurrency(), maximumFractionDigits: 0 });
+  const recurring = getRecurring(uid);
+  const planned = getPlanned(uid);
   const { months, alerts } = forecast(accounts, recurring, planned, today);
   const month = ym(today);
   const prevMonth = addMonths(month, -1);
@@ -44,10 +44,10 @@ export default async function Dashboard() {
   const endTotal = sum(months[0].balances);
 
   // Spending: this month so far vs the previous month at the same day.
-  const txs = getTransactions(month);
+  const txs = getTransactions(uid, month);
   const todayDay = Number(today.slice(8));
   const current = cumulative(txs, todayDay);
-  const previous = cumulative(getTransactions(prevMonth), Number(dayInMonth(prevMonth, 31).slice(8)));
+  const previous = cumulative(getTransactions(uid, prevMonth), Number(dayInMonth(prevMonth, 31).slice(8)));
   const spentSoFar = current.at(-1) ?? 0;
   const prevSameDay = previous[Math.min(todayDay, previous.length) - 1] ?? 0;
   const income = txs.filter((t) => t.amount > 0 && t.category !== "Virement").reduce((s, t) => s + t.amount, 0);
@@ -60,7 +60,8 @@ export default async function Dashboard() {
   ).sort((a, b) => b[1] - a[1]);
 
   // Calendar: every recurrence of this month (past ones already posted) and this month's planned expenses.
-  const display = (cents: number, transfer: boolean) => `${!transfer && cents > 0 ? "+" : ""}${fmt(cents, getCurrency())}`;
+  const currency = await getCurrency();
+  const display = (cents: number, transfer: boolean) => `${!transfer && cents > 0 ? "+" : ""}${fmt(cents, currency)}`;
   const calendar = [
     ...recurring.map((r) => ({ key: `r${r.id}`, date: dayInMonth(month, r.day), label: r.label, amount: r.amount, transfer: !!r.to_account_id })),
     ...planned.filter((p) => ym(p.date) === month).map((p) => ({ key: `p${p.id}`, date: p.date, label: p.label, amount: p.amount, transfer: false })),

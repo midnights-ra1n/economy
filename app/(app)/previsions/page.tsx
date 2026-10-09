@@ -6,16 +6,16 @@ import { addPlanned, addRecurring, payPlanned } from "../actions";
 import { Card, DeleteButton, Empty, EntryForm, Money, Row, listClass } from "../ui";
 
 export default async function Previsions() {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const today = localToday();
-  const accounts = getAccounts();
+  const accounts = getAccounts(uid);
   if (!accounts.length) {
     return <Empty>Ajoutez d&apos;abord un <Link href="/comptes" className="text-ink underline">compte</Link>.</Empty>;
   }
   const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
-  const categories = getCategories();
-  const recurring = getRecurring();
-  const planned = getPlanned();
+  const categories = getCategories(uid);
+  const recurring = getRecurring(uid);
+  const planned = getPlanned(uid);
   // Transfers move money between own accounts: not a cost.
   const monthly = recurring.filter((r) => !r.to_account_id).reduce((s, r) => s + r.amount, 0);
 

@@ -13,3 +13,5 @@ services:
 
 volumes:
   economy-data:
+    # Fixed name: otherwise Compose prefixes it with the folder name, and moving the folder would start from an empty volume.
+    name: economy-data

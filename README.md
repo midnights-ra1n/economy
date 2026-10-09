@@ -10,9 +10,19 @@ Gestion de budget personnel, simple, installable en PWA (mobile et desktop), aut
 - **Import / export** : sauvegarde complète en JSON (restaurable), opérations en CSV pour Excel ou LibreOffice
 - **Devise** au choix (euro par défaut, dollar, livre, franc suisse…)
 - Connexion par **identifiant et mot de passe**, avec **passkeys en option** (Face ID, Touch ID, Windows Hello)
+- **Plusieurs utilisateurs**, chacun avec ses propres comptes, et un **panneau d'administration** (création, rôles, mots de passe, déconnexion, effacement des données, réinitialisation complète)
 - Base **SQLite** dans un seul fichier, via le module `node:sqlite` intégré à Node (aucune dépendance native)
 
-Application mono-utilisateur. Les données vivent sur votre serveur : tous vos appareils (PC, téléphone) voient les mêmes chiffres.
+Les données vivent sur votre serveur : tous vos appareils (PC, téléphone) voient les mêmes chiffres.
+
+## Utilisateurs et administration
+
+- Le premier compte, créé avec le code d'initialisation, est **administrateur**. Il crée les autres utilisateurs depuis **Admin** (barre du haut sur ordinateur, ou Réglages → Administration sur mobile).
+- Chaque utilisateur ne voit que ses propres comptes, opérations et prévisions. Ses exports ne contiennent que ses données.
+- L'administrateur peut, pour chaque utilisateur : changer son rôle, lui donner un nouveau mot de passe, le déconnecter de tous ses appareils, **effacer ses données bancaires** (son accès est conservé) ou le supprimer.
+- Un administrateur ne peut ni se retirer ses droits ni supprimer son propre compte : il reste donc toujours au moins un administrateur.
+- **Réinitialiser l'application** (Admin, en bas) supprime tous les utilisateurs et toutes les données. Il faut taper `RÉINITIALISER` et son mot de passe. Un nouveau code d'initialisation s'affiche ensuite dans les logs.
+- Chacun peut aussi effacer ses propres données bancaires dans Réglages, avec son mot de passe.
 
 ## Démarrage avec Docker
 
@@ -21,9 +31,19 @@ ORIGIN=https://budget.mondomaine.fr docker compose up -d --build
 docker compose logs economy   # affiche le code d'initialisation
 ```
 
-Ouvrez l'URL, saisissez le **code d'initialisation** affiché dans les logs, puis choisissez votre identifiant et votre mot de passe. Un nouveau code est généré à chaque démarrage tant qu'aucun compte n'existe, et il disparaît dès que le compte est créé : personne d'autre ne peut ensuite s'inscrire. Vous pourrez ajouter des passkeys dans Réglages.
+Ouvrez l'URL, saisissez le **code d'initialisation** affiché dans les logs, puis choisissez votre identifiant et votre mot de passe. Un nouveau code est généré à chaque démarrage tant qu'aucun compte n'existe, et il disparaît dès que le compte est créé : personne ne peut ensuite s'inscrire seul : c'est l'administrateur qui crée les autres comptes. Vous pourrez ajouter des passkeys dans Réglages.
 
 Les données sont stockées dans le volume `economy-data` (`/data/economy.db`).
+
+## Persistance et mises à jour
+
+La base est le seul état de l'application. Elle se trouve dans `/data`, en dehors de l'image : remplacer l'image ne la touche pas.
+
+- **Docker Compose** : le volume nommé `economy-data` survit aux redémarrages, à `docker compose up -d --build` et à `docker compose pull`. Seul `docker compose down -v` le supprime : n'utilisez jamais `-v`.
+- **`docker run`** : passez toujours le même volume nommé, `-v economy-data:/data`. Sans lui, Docker crée un volume anonyme différent à chaque nouveau conteneur, et la nouvelle version repart d'une base vide.
+- **Mises à jour du schéma** : au démarrage, une nouvelle version met à niveau la base existante sur place (version notée dans `PRAGMA user_version`). Les données existantes sont conservées. Une installation mono-utilisateur devient ainsi multi-utilisateur, et son propriétaire devient administrateur.
+- **Vérification** : à chaque démarrage, les logs affichent `[economy] Base /data/economy.db : N utilisateur(s).`, avec un avertissement si `/data` n'est pas un volume monté. Le panneau Admin indique aussi « Stockage : Persistant » ou « Éphémère ».
+- Avant une mise à jour importante, exportez une sauvegarde (Réglages) ou copiez `economy.db`.
 
 ## Conteneur LXC sur Proxmox (image OCI)
 
@@ -38,9 +58,9 @@ L'image construite par le `Dockerfile` est une image OCI standard. Proxmox VE 9.
    ```
 
 2. Dans Proxmox, envoyez `economy-oci.tar` dans un stockage, rubrique **CT Templates → Upload**.
-3. Créez le conteneur (**Create CT**) avec ce template. Ajoutez un **point de montage sur `/data`** : sans lui, la base est perdue si le conteneur est recréé.
+3. Créez le conteneur (**Create CT**) avec ce template, puis montez un dossier de l'hôte sur `/data` : `pct set <id> -mp0 /srv/economy,mp=/data`. Un montage depuis l'hôte (bind mount) n'est jamais supprimé avec le conteneur. Pour mettre à jour, créez un conteneur depuis la nouvelle image avec le même montage : il retrouve toutes les données. Évitez un volume créé par Proxmox, qui est détruit avec le conteneur.
 4. Ajoutez la variable d'environnement `ORIGIN=https://budget.mondomaine.fr` dans les options du conteneur. `DATA_DIR`, `PORT` et `TZ` sont déjà définis par l'image.
-5. Le processus tourne sous l'utilisateur `node` (uid 1000), donc `/data` doit lui appartenir. Dans un conteneur non privilégié, cet uid correspond à 101000 sur l'hôte : `chown 101000:101000 <dossier du point de montage>`.
+5. Le processus tourne sous l'utilisateur `node` (uid 1000), donc `/data` doit lui appartenir. Dans un conteneur non privilégié, cet uid correspond à 101000 sur l'hôte : `mkdir -p /srv/economy && chown 101000:101000 /srv/economy`.
 6. Démarrez le conteneur. Le code d'initialisation s'affiche dans sa console.
 
 ## Démarrage sans Docker
@@ -79,6 +99,8 @@ La base est créée dans `./data` (modifiable avec `DATA_DIR`).
 - Les sessions sont des jetons aléatoires dans un cookie `HttpOnly`, `SameSite=Lax` et `Secure` en HTTPS. Elles expirent après 30 jours. Changer le mot de passe déconnecte les autres appareils.
 - Les défis WebAuthn sont stockés côté serveur, à usage unique, et expirent après 5 minutes.
 - Chaque page et chaque server action revérifie la session.
+- Le rôle administrateur est revérifié côté serveur à chaque action du panneau. Chaque requête sur des données bancaires est filtrée par utilisateur, et les identifiants de compte envoyés par les formulaires sont contrôlés.
+- Les effacements écrasent réellement les données (`PRAGMA secure_delete`). La réinitialisation vide aussi le journal WAL et compacte la base.
 - Les en-têtes de sécurité sont configurés (HSTS, `X-Frame-Options`, `nosniff`…) et l'application demande à ne pas être indexée.
 
 ## Développement

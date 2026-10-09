@@ -1,10 +1,10 @@
 import { requireUser } from "@/lib/auth";
 import { CURRENCIES } from "@/lib/backup";
-import { getCurrency } from "@/lib/budget";
 import { db } from "@/lib/db";
+import Link from "next/link";
 import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
-import { importData, setCurrency } from "../actions";
+import { importData, setCurrency, wipeMyData } from "../actions";
 import { ConfirmButton, MessageForm } from "../client";
 import { Card, Field, button, input, listClass } from "../ui";
 
@@ -12,16 +12,24 @@ const ghost = "rounded-xl border border-line px-4 py-2.5 text-center font-medium
 const names: Record<string, string> = { EUR: "Euro (€)", USD: "Dollar US ($)", GBP: "Livre sterling (£)", CHF: "Franc suisse (CHF)", CAD: "Dollar canadien ($ CA)", JPY: "Yen (¥)" };
 
 export default async function Reglages() {
-  await requireUser();
-  const passkeys = db.prepare("SELECT id, name, created_at FROM credentials ORDER BY created_at").all() as {
+  const user = await requireUser();
+  const passkeys = db.prepare("SELECT id, name, created_at FROM credentials WHERE user_id = ? ORDER BY created_at").all(user.id) as {
     id: string; name: string; created_at: string;
   }[];
   return (
     <>
+      <section className="anim-rise flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">Réglages</h1>
+          <p className="mt-1 text-muted">Connecté en tant que <span className="font-medium text-ink">{user.username}</span>{user.role === "admin" && ", administrateur"}.</p>
+        </div>
+        {user.role === "admin" && <Link href="/admin" className={ghost}>Administration</Link>}
+      </section>
+
       <Card title="Devise">
         <form action={setCurrency} className="flex flex-col gap-3 sm:flex-row sm:items-end">
           <Field label="Devise d'affichage" className="flex-1">
-            <select name="currency" defaultValue={getCurrency()} className={input}>
+            <select name="currency" defaultValue={user.currency} className={input}>
               {CURRENCIES.map((c) => <option key={c} value={c}>{names[c]}</option>)}
             </select>
           </Field>
@@ -75,6 +83,16 @@ export default async function Reglages() {
             <span>Je comprends que l&apos;import remplace tous mes comptes, opérations et prévisions actuels.</span>
           </label>
           <button className={button}>Importer</button>
+        </MessageForm>
+      </Card>
+
+      <Card title="Effacer mes données">
+        <p className="mb-3 text-sm text-muted">Supprime vos comptes, opérations, abonnements et dépenses prévues. Votre accès, vos passkeys et votre devise sont conservés.</p>
+        <MessageForm action={wipeMyData} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <Field label="Votre mot de passe, pour confirmer" className="flex-1">
+            <input name="password" type="password" required autoComplete="current-password" className={input} />
+          </Field>
+          <button className="rounded-xl border border-loss/30 px-4 py-2.5 font-medium text-loss transition-colors hover:bg-loss/10">Effacer mes données bancaires</button>
         </MessageForm>
       </Card>
 

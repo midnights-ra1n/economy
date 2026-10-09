@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
-import { requireUser } from "@/lib/auth";
-import { db, setSetting, tx } from "@/lib/db";
+import { requireUser, verifyPassword, assertNotLocked, recordFailure } from "@/lib/auth";
+import { OWN, assertOwnAccounts, wipeBudget } from "@/lib/budget";
+import { db, tx } from "@/lib/db";
 import { CURRENCIES, SCHEMA, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
 
@@ -32,12 +33,13 @@ function date(form: FormData, key = "date"): string {
 }
 
 /** Shared fields of operations, subscriptions and planned expenses. Expenses and transfers are stored negative. */
-function entry(form: FormData) {
+function entry(uid: number, form: FormData) {
   const type = String(form.get("type"));
   const amount = cents(form, "amount");
   const account_id = id(form, "account_id");
   const to_account_id = type === "virement" ? id(form, "to_account_id") : null;
   if (to_account_id === account_id) throw new Error("Virement vers le même compte");
+  assertOwnAccounts(uid, account_id, to_account_id);
   return {
     label: text(form, "label"),
     amount: type === "revenu" ? amount : -amount,
@@ -52,8 +54,8 @@ async function done() {
 }
 
 export async function addTransaction(form: FormData) {
-  await requireUser();
-  const e = entry(form);
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
   const d = date(form);
   const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)");
   tx(() => {
@@ -64,8 +66,8 @@ export async function addTransaction(form: FormData) {
 }
 
 export async function addRecurring(form: FormData) {
-  await requireUser();
-  const e = entry(form);
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
   const day = id(form, "day");
   if (day > 31) throw new Error("Jour invalide");
   const today = localToday();
@@ -77,8 +79,8 @@ export async function addRecurring(form: FormData) {
 }
 
 export async function addPlanned(form: FormData) {
-  await requireUser();
-  const e = entry(form);
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
   db.prepare("INSERT INTO planned (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)")
     .run(e.account_id, e.label, e.amount, date(form), e.category);
   await done();
@@ -86,12 +88,12 @@ export async function addPlanned(form: FormData) {
 
 /** A planned expense happened: it becomes a real transaction dated today. */
 export async function payPlanned(form: FormData) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const pid = id(form);
   tx(() => {
-    db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) SELECT account_id, label, amount, ?, category FROM planned WHERE id = ?")
-      .run(localToday(), pid);
-    db.prepare("DELETE FROM planned WHERE id = ?").run(pid);
+    db.prepare(`INSERT INTO transactions (account_id, label, amount, date, category) SELECT account_id, label, amount, ?, category FROM planned WHERE id = ? AND ${OWN}`)
+      .run(localToday(), pid, uid);
+    db.prepare(`DELETE FROM planned WHERE id = ? AND ${OWN}`).run(pid, uid);
   });
   await done();
 }
@@ -99,55 +101,90 @@ export async function payPlanned(form: FormData) {
 const deletable = { transactions: 1, recurring: 1, planned: 1, accounts: 1 } as const;
 
 export async function deleteRow(form: FormData) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const table = String(form.get("table"));
   if (!(table in deletable)) throw new Error("Table invalide"); // whitelist: the name is interpolated below
-  db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(id(form));
+  db.prepare(`DELETE FROM ${table} WHERE id = ? AND ${table === "accounts" ? "user_id = ?" : OWN}`).run(id(form), uid);
   await done();
 }
 
 export async function saveAccount(form: FormData) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const kind = String(form.get("kind"));
   if (kind !== "courant" && kind !== "epargne") throw new Error("Type invalide");
   const min = String(form.get("min_balance") ?? "").trim() ? cents(form, "min_balance", true) : null;
   // The user types the real current balance (to match the bank); store it as an offset from the transactions.
   const aid = form.get("id") ? id(form) : null;
+  if (aid) assertOwnAccounts(uid, aid);
   const { s } = db.prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ?").get(aid) as { s: number };
   const values = [text(form, "name", 40), kind, cents(form, "balance", true) - s, min] as const;
   if (aid) db.prepare("UPDATE accounts SET name = ?, kind = ?, initial_balance = ?, min_balance = ? WHERE id = ?").run(...values, aid);
-  else db.prepare("INSERT INTO accounts (name, kind, initial_balance, min_balance) VALUES (?, ?, ?, ?)").run(...values);
+  else db.prepare("INSERT INTO accounts (name, kind, initial_balance, min_balance, user_id) VALUES (?, ?, ?, ?, ?)").run(...values, uid);
   await done();
 }
 
 export async function setCurrency(form: FormData) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const c = String(form.get("currency"));
   if (!CURRENCIES.includes(c as never)) throw new Error("Devise inconnue");
-  setSetting("currency", c);
+  db.prepare("UPDATE users SET currency = ? WHERE id = ?").run(c, uid);
   await done();
 }
 
-/** Restores a JSON backup, replacing all budget data. Returns form state for useActionState. */
+/**
+ * Restores a JSON backup, replacing the user's budget data. Returns form state for useActionState.
+ * Rows get new ids (other users own the backup's ids); references are remapped to the new accounts.
+ */
 export async function importData(_: { error?: string; ok?: string }, form: FormData) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   try {
     const file = form.get("file");
     if (!(file instanceof File) || !file.size) throw new Error("Choisissez un fichier de sauvegarde.");
     const backup = parseBackup(await file.text());
     tx(() => {
-      db.exec("DELETE FROM accounts"); // cascades to transactions, recurring and planned
+      wipeBudget(uid); // cascades to transactions, recurring and planned
+      const accountIds = new Map<unknown, number>();
+      const ref = (v: unknown) => {
+        if (v === null || v === undefined) return null;
+        const n = accountIds.get(v);
+        if (n === undefined) throw new Error("Sauvegarde incohérente : une ligne pointe vers un compte absent.");
+        return n;
+      };
       for (const table of ["accounts", "transactions", "recurring", "planned"] as const) {
-        const cols = Object.keys(SCHEMA[table]);
-        const insert = db.prepare(`INSERT INTO ${table} (${cols.join(", ")}) VALUES (${cols.map(() => "?").join(", ")})`);
-        for (const row of backup[table]) insert.run(...cols.map((c) => (row[c] ?? null) as number | string | null));
+        const cols = Object.keys(SCHEMA[table]).filter((c) => c !== "id");
+        const insert = db.prepare(
+          `INSERT INTO ${table} (${[...cols, ...(table === "accounts" ? ["user_id"] : [])].join(", ")}) VALUES (${cols.map(() => "?").join(", ")}${table === "accounts" ? ", ?" : ""})`,
+        );
+        for (const row of backup[table]) {
+          const values = cols.map((c) => (c === "account_id" || c === "to_account_id" ? ref(row[c]) : ((row[c] ?? null) as number | string | null)));
+          const { lastInsertRowid } = insert.run(...values, ...(table === "accounts" ? [uid] : []));
+          if (table === "accounts") accountIds.set(row.id, Number(lastInsertRowid));
+        }
       }
-      setSetting("currency", backup.currency);
+      db.prepare("UPDATE users SET currency = ? WHERE id = ?").run(backup.currency, uid);
     });
     await done();
     return { ok: `Import terminé : ${backup.accounts.length} comptes, ${backup.transactions.length} opérations.` };
   } catch (e) {
-    // FK violations (e.g. an operation pointing to a missing account) land here; the transaction rolled back.
+    // The transaction rolled back: the previous data is intact.
     return { error: e instanceof Error ? e.message : "Import impossible." };
+  }
+}
+
+/** The user erases their own banking data. The password guards against a stolen unlocked session or a misclick. */
+export async function wipeMyData(_: { error?: string; ok?: string }, form: FormData) {
+  const { id: uid } = await requireUser();
+  try {
+    await assertNotLocked();
+    const { password_hash } = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(uid) as { password_hash: string };
+    if (!verifyPassword(String(form.get("password") ?? ""), password_hash)) {
+      await recordFailure();
+      throw new Error("Mot de passe incorrect.");
+    }
+    wipeBudget(uid);
+    await done();
+    return { ok: "Toutes vos données bancaires ont été effacées." };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "Effacement impossible." };
   }
 }

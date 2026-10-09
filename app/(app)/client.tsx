@@ -48,17 +48,17 @@ const useActive = () => {
   return (href: string) => (href === "/" ? path === "/" : path.startsWith(href));
 };
 
-/** Desktop navbar links (hidden on mobile, where TabBar takes over). */
-export function NavLinks() {
+/** Desktop navbar links (hidden on mobile, where TabBar takes over; admins reach the panel from Réglages there). */
+export function NavLinks({ admin }: { admin: boolean }) {
   const isActive = useActive();
   return (
-    <ul className="hidden items-center gap-1 sm:flex">
-      {links.map((l) => (
+    <ul className="hidden min-w-0 items-center gap-0.5 overflow-x-auto desk:flex">
+      {[...links, ...(admin ? [{ href: "/admin", label: "Admin" }] : [])].map((l) => (
         <li key={l.href}>
           <Link
             href={l.href}
             aria-current={isActive(l.href) ? "page" : undefined}
-            className={`rounded-lg px-3 py-1.5 text-sm transition-colors ${isActive(l.href) ? "bg-ink/[0.06] font-medium text-ink" : "text-muted hover:text-ink"}`}
+            className={`block rounded-xl px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${isActive(l.href) ? "bg-paper/15 font-medium text-paper" : "text-paper/65 hover:text-paper"}`}
           >
             {l.label}
           </Link>
@@ -72,7 +72,7 @@ export function NavLinks() {
 export function TabBar() {
   const isActive = useActive();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg sm:hidden">
+    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg desk:hidden">
       <ul className="mx-auto flex max-w-md justify-around px-2">
         {links.map((l) => (
           <li key={l.href}>
@@ -99,7 +99,7 @@ export function QuickAdd({ children }: { children: ReactNode }) {
     <>
       <button
         onClick={() => ref.current?.showModal()}
-        className="hidden items-center gap-1.5 rounded-lg bg-ink px-3 py-1.5 text-sm font-medium text-paper transition-transform active:scale-95 sm:flex"
+        className="hidden shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-paper transition-transform active:scale-95 desk:flex"
       >
         <svg viewBox="0 0 24 24" className="size-4" aria-hidden>{plus}</svg>
         Ajouter
@@ -107,7 +107,7 @@ export function QuickAdd({ children }: { children: ReactNode }) {
       <button
         onClick={() => ref.current?.showModal()}
         aria-label="Ajouter une opération"
-        className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 grid size-14 place-items-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition-transform active:scale-90 sm:hidden"
+        className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 grid size-14 place-items-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition-transform active:scale-90 desk:hidden"
       >
         <svg viewBox="0 0 24 24" className="size-6" aria-hidden>{plus}</svg>
       </button>

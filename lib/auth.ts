@@ -1,5 +1,6 @@
 import { cookies, headers } from "next/headers";
 import { redirect } from "next/navigation";
+import { cache } from "react";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { db, getSetting, sha256 } from "./db";
 
@@ -12,22 +13,40 @@ const SESSION_DAYS = 30;
 
 const cookieOpts = (maxAge: number) => ({ httpOnly: true, secure: SECURE, sameSite: "lax" as const, path: "/", maxAge });
 
-export async function isLoggedIn(): Promise<boolean> {
+export type User = { id: number; username: string; role: "admin" | "user"; currency: string };
+
+/** The logged-in user, read once per request. */
+export const currentUser = cache(async (): Promise<User | null> => {
   const token = (await cookies()).get(SESSION_COOKIE)?.value;
-  if (!token) return false;
+  if (!token) return null;
   // Only the hash is stored, so a leaked DB file does not leak live sessions.
-  return !!db.prepare("SELECT 1 FROM sessions WHERE token_hash = ? AND expires_at > ?").get(sha256(token), Date.now());
-}
+  return (db.prepare(`
+    SELECT u.id, u.username, u.role, u.currency FROM sessions s JOIN users u ON u.id = s.user_id
+    WHERE s.token_hash = ? AND s.expires_at > ?
+  `).get(sha256(token), Date.now()) as User | undefined) ?? null;
+});
+
+export const isLoggedIn = async () => !!(await currentUser());
 
 /** Call at the top of every page, route and server action that touches budget data. */
-export async function requireUser() {
-  if (!(await isLoggedIn())) redirect("/login");
+export async function requireUser(): Promise<User> {
+  const user = await currentUser();
+  if (!user) redirect("/login");
+  return user;
 }
 
-export async function createSession() {
+/** Same, for the admin panel and its actions: anyone else is sent back home. */
+export async function requireAdmin(): Promise<User> {
+  const user = await requireUser();
+  if (user.role !== "admin") redirect("/");
+  return user;
+}
+
+export async function createSession(userId: number) {
   const token = randomBytes(32).toString("base64url");
   db.prepare("DELETE FROM sessions WHERE expires_at < ?").run(Date.now());
-  db.prepare("INSERT INTO sessions (token_hash, expires_at) VALUES (?, ?)").run(sha256(token), Date.now() + SESSION_DAYS * 864e5);
+  db.prepare("INSERT INTO sessions (token_hash, expires_at, user_id) VALUES (?, ?, ?)").run(sha256(token), Date.now() + SESSION_DAYS * 864e5, userId);
+  db.prepare("UPDATE users SET last_login = datetime('now') WHERE id = ?").run(userId);
   (await cookies()).set(SESSION_COOKIE, token, cookieOpts(SESSION_DAYS * 86400));
 }
 
@@ -38,9 +57,9 @@ export async function destroySession() {
   jar.delete(SESSION_COOKIE);
 }
 
-/** Logs out every device (after a password change). */
-export function destroyAllSessions() {
-  db.prepare("DELETE FROM sessions").run();
+/** Logs a user out of every device (password change or reset, by them or an admin). */
+export function destroyAllSessions(userId: number) {
+  db.prepare("DELETE FROM sessions WHERE user_id = ?").run(userId);
 }
 
 // Challenges live server-side (single use, 5 min) so a captured assertion cannot be replayed.
@@ -62,7 +81,7 @@ export async function takeChallenge(): Promise<string> {
   return row.challenge;
 }
 
-export const isSetUp = () => getSetting("password_hash") !== null;
+export const isSetUp = () => !!db.prepare("SELECT 1 FROM users LIMIT 1").get();
 export const hasPasskey = () => !!db.prepare("SELECT 1 FROM credentials LIMIT 1").get();
 
 const safeEqual = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeEqual(a, b);
@@ -70,6 +89,26 @@ const safeEqual = (a: Buffer, b: Buffer) => a.length === b.length && timingSafeE
 export function checkSetupCode(code: string): boolean {
   const hash = getSetting("setup_code_hash");
   return !!hash && safeEqual(Buffer.from(sha256(code.trim().toLowerCase())), Buffer.from(hash));
+}
+
+const field = (form: FormData, key: string) => String(form.get(key) ?? "");
+const MIN_PASSWORD = 10;
+
+/** Validated new password (fields `password` and `confirm`). */
+export function newPassword(form: FormData): string {
+  const password = field(form, "password");
+  if (password.length < MIN_PASSWORD) throw new Error(`Le mot de passe doit faire au moins ${MIN_PASSWORD} caractères.`);
+  if (password.length > 200) throw new Error("Mot de passe trop long.");
+  if (password !== field(form, "confirm")) throw new Error("Les deux mots de passe ne correspondent pas.");
+  return password;
+}
+
+/** Validated, unused username: 1–40 chars, unique ignoring case. */
+export function newUsername(form: FormData): string {
+  const username = field(form, "username").trim();
+  if (!username || username.length > 40) throw new Error("Identifiant invalide (1 à 40 caractères).");
+  if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) throw new Error("Cet identifiant est déjà pris.");
+  return username;
 }
 
 // scrypt (built into Node): slow on purpose, salted, so a stolen DB cannot reveal the password.

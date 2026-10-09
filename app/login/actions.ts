@@ -10,26 +10,16 @@ import {
 } from "@simplewebauthn/server";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
-import { db, getSetting, setSetting } from "@/lib/db";
+import { db } from "@/lib/db";
 import {
   ORIGIN, RP_ID, assertNotLocked, checkSetupCode, clearFailures, createSession, destroyAllSessions, destroySession,
-  hashPassword, isSetUp, recordFailure, requireUser, saveChallenge, takeChallenge, verifyPassword,
+  hashPassword, isSetUp, newPassword, newUsername, recordFailure, requireUser, saveChallenge, takeChallenge, verifyPassword,
 } from "@/lib/auth";
 
 export type FormState = { error?: string; ok?: string };
-type Cred = { id: string; public_key: Uint8Array; counter: number; transports: string | null };
+type Cred = { id: string; public_key: Uint8Array; counter: number; transports: string | null; user_id: number };
 
 const field = (form: FormData, key: string) => String(form.get(key) ?? "");
-const MIN_PASSWORD = 10;
-
-function newPassword(form: FormData): string {
-  const password = field(form, "password");
-  if (password.length < MIN_PASSWORD) throw new Error(`Le mot de passe doit faire au moins ${MIN_PASSWORD} caractères.`);
-  if (password.length > 200) throw new Error("Mot de passe trop long.");
-  if (password !== field(form, "confirm")) throw new Error("Les deux mots de passe ne correspondent pas.");
-  return password;
-}
-
 /** Turns thrown messages into form state: server action errors are hidden from the client in production. */
 async function attempt(fn: () => Promise<FormState | void>): Promise<FormState> {
   try {
@@ -48,14 +38,13 @@ export async function setup(_: FormState, form: FormData): Promise<FormState> {
       await recordFailure();
       throw new Error("Code d'initialisation incorrect. Il est affiché dans les logs du conteneur.");
     }
-    const username = field(form, "username").trim();
-    if (!username || username.length > 40) throw new Error("Identifiant invalide.");
+    const username = newUsername(form);
     const password = newPassword(form);
-    setSetting("username", username);
-    setSetting("password_hash", hashPassword(password));
+    // The first account is the admin: it manages the other users.
+    const { lastInsertRowid } = db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(username, hashPassword(password));
     db.prepare("DELETE FROM settings WHERE key = 'setup_code_hash'").run();
     await clearFailures();
-    await createSession();
+    await createSession(Number(lastInsertRowid));
   });
   if (state.error) return state;
   redirect("/");
@@ -64,43 +53,46 @@ export async function setup(_: FormState, form: FormData): Promise<FormState> {
 export async function login(_: FormState, form: FormData): Promise<FormState> {
   const state = await attempt(async () => {
     await assertNotLocked();
-    // Both checks always run so timing does not reveal which one failed.
-    const userOk = field(form, "username").trim() === getSetting("username");
-    const passOk = verifyPassword(field(form, "password"), getSetting("password_hash"));
-    if (!userOk || !passOk) {
+    const user = db.prepare("SELECT id, password_hash FROM users WHERE username = ?").get(field(form, "username").trim()) as
+      | { id: number; password_hash: string }
+      | undefined;
+    // scrypt runs even for an unknown user so timing does not reveal which usernames exist.
+    const passOk = verifyPassword(field(form, "password"), user?.password_hash ?? null);
+    if (!user || !passOk) {
       await recordFailure();
       throw new Error("Identifiant ou mot de passe incorrect.");
     }
     await clearFailures();
-    await createSession();
+    await createSession(user.id);
   });
   if (state.error) return state;
   redirect("/");
 }
 
 export async function changePassword(_: FormState, form: FormData): Promise<FormState> {
-  await requireUser();
+  const user = await requireUser();
   return attempt(async () => {
     await assertNotLocked();
-    if (!verifyPassword(field(form, "current"), getSetting("password_hash"))) {
+    const { password_hash } = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id) as { password_hash: string };
+    if (!verifyPassword(field(form, "current"), password_hash)) {
       await recordFailure();
       throw new Error("Mot de passe actuel incorrect.");
     }
-    setSetting("password_hash", hashPassword(newPassword(form)));
-    destroyAllSessions(); // other devices must log in again with the new password
-    await createSession();
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(newPassword(form)), user.id);
+    destroyAllSessions(user.id); // other devices must log in again with the new password
+    await createSession(user.id);
     return { ok: "Mot de passe modifié. Les autres appareils sont déconnectés." };
   });
 }
 
 export async function registrationOptions() {
-  await requireUser();
-  const existing = db.prepare("SELECT id, transports FROM credentials").all() as Pick<Cred, "id" | "transports">[];
+  const user = await requireUser();
+  const existing = db.prepare("SELECT id, transports FROM credentials WHERE user_id = ?").all(user.id) as Pick<Cred, "id" | "transports">[];
   const options = await generateRegistrationOptions({
     rpName: "Economy",
     rpID: RP_ID,
-    userName: getSetting("username") ?? "moi",
-    userID: new TextEncoder().encode("owner"), // single-user app: stable id so devices sync one passkey
+    userName: user.username,
+    userID: new TextEncoder().encode(`user-${user.id}`), // stable per user so a device keeps one passkey per account
     attestationType: "none",
     excludeCredentials: existing.map((c) => ({ id: c.id, transports: c.transports ? JSON.parse(c.transports) : undefined })),
     authenticatorSelection: { residentKey: "required", userVerification: "preferred" },
@@ -110,7 +102,7 @@ export async function registrationOptions() {
 }
 
 export async function verifyRegistration(response: RegistrationResponseJSON, name: string) {
-  await requireUser();
+  const user = await requireUser();
   const { verified, registrationInfo } = await verifyRegistrationResponse({
     response,
     expectedChallenge: await takeChallenge(),
@@ -119,12 +111,13 @@ export async function verifyRegistration(response: RegistrationResponseJSON, nam
   });
   if (!verified) throw new Error("Passkey refusée.");
   const { credential } = registrationInfo;
-  db.prepare("INSERT INTO credentials (id, public_key, counter, transports, name) VALUES (?, ?, ?, ?, ?)").run(
+  db.prepare("INSERT INTO credentials (id, public_key, counter, transports, name, user_id) VALUES (?, ?, ?, ?, ?, ?)").run(
     credential.id,
     credential.publicKey,
     credential.counter,
     JSON.stringify(credential.transports ?? []),
     name.trim().slice(0, 50) || "Passkey",
+    user.id,
   );
   revalidatePath("/reglages");
 }
@@ -148,7 +141,7 @@ export async function verifyAuthentication(response: AuthenticationResponseJSON)
   });
   if (!verified) throw new Error("Passkey refusée.");
   db.prepare("UPDATE credentials SET counter = ? WHERE id = ?").run(authenticationInfo.newCounter, cred.id);
-  await createSession();
+  await createSession(cred.user_id);
 }
 
 export async function logout() {
@@ -157,7 +150,7 @@ export async function logout() {
 }
 
 export async function deletePasskey(formData: FormData) {
-  await requireUser();
-  db.prepare("DELETE FROM credentials WHERE id = ?").run(String(formData.get("id")));
+  const user = await requireUser();
+  db.prepare("DELETE FROM credentials WHERE id = ? AND user_id = ?").run(String(formData.get("id")), user.id);
   revalidatePath("/reglages");
 }

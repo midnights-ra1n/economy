@@ -33,8 +33,8 @@ function AccountForm({ account }: { account?: Account }) {
 }
 
 export default async function Comptes() {
-  await requireUser();
-  const accounts = getAccounts();
+  const { id: uid } = await requireUser();
+  const accounts = getAccounts(uid);
   return (
     <>
       <Card title="Nouveau compte">

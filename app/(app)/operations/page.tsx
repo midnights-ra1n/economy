@@ -7,14 +7,14 @@ import { Card, DeleteButton, Empty, Money, Row, listClass } from "../ui";
 const arrow = "grid size-9 place-items-center rounded-full border border-line transition-colors hover:bg-surface";
 
 export default async function Operations({ searchParams }: PageProps<"/operations">) {
-  await requireUser();
+  const { id: uid } = await requireUser();
   const today = localToday();
-  postDueRecurring(today);
+  postDueRecurring(uid, today);
   const m = (await searchParams).m;
   const month = typeof m === "string" && /^\d{4}-\d{2}$/.test(m) ? m : ym(today);
-  const accounts = getAccounts();
+  const accounts = getAccounts(uid);
   const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
-  const txs = getTransactions(month);
+  const txs = getTransactions(uid, month);
   const label = new Date(`${month}-01T12:00`).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
 
   return (

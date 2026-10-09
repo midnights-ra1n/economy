@@ -1,36 +1,47 @@
 import { cache } from "react";
-import { db, getSetting, tx } from "./db";
+import { currentUser } from "./auth";
+import { db, tx } from "./db";
 import { duePosts, localToday, type Account, type Planned, type Recurring } from "./forecast";
 
 export type RecurringRow = Recurring & { category: string | null };
 export type PlannedRow = Planned & { category: string | null };
 export type Transaction = { id: number; account_id: number; label: string; amount: number; date: string; category: string | null };
 
-export const getAccounts = () =>
+// Every budget row belongs to a user through its account: all reads and writes are scoped by user id.
+export const OWN = "account_id IN (SELECT id FROM accounts WHERE user_id = ?)";
+
+export const getAccounts = (uid: number) =>
   db.prepare(`
     SELECT a.id, a.name, a.kind, a.min_balance, a.initial_balance,
            a.initial_balance + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id), 0) AS balance
-    FROM accounts a ORDER BY a.kind, a.name
-  `).all() as (Account & { initial_balance: number })[];
+    FROM accounts a WHERE a.user_id = ? ORDER BY a.kind, a.name
+  `).all(uid) as (Account & { initial_balance: number })[];
 
-export const getRecurring = () => db.prepare("SELECT * FROM recurring ORDER BY day, label").all() as RecurringRow[];
-export const getPlanned = () => db.prepare("SELECT * FROM planned ORDER BY date, label").all() as PlannedRow[];
+export const getRecurring = (uid: number) => db.prepare(`SELECT * FROM recurring WHERE ${OWN} ORDER BY day, label`).all(uid) as RecurringRow[];
+export const getPlanned = (uid: number) => db.prepare(`SELECT * FROM planned WHERE ${OWN} ORDER BY date, label`).all(uid) as PlannedRow[];
 
-export const getTransactions = (month: string) =>
-  db.prepare("SELECT * FROM transactions WHERE date LIKE ? ORDER BY date DESC, id DESC").all(`${month}-%`) as Transaction[];
+export const getTransactions = (uid: number, month: string) =>
+  db.prepare(`SELECT * FROM transactions WHERE ${OWN} AND date LIKE ? ORDER BY date DESC, id DESC`).all(uid, `${month}-%`) as Transaction[];
 
-export const getCategories = () =>
+export const getCategories = (uid: number) =>
   (db.prepare(`
-    SELECT category FROM transactions WHERE category IS NOT NULL
-    UNION SELECT category FROM recurring WHERE category IS NOT NULL ORDER BY 1
-  `).all() as { category: string }[]).map((r) => r.category);
+    SELECT category FROM transactions WHERE category IS NOT NULL AND ${OWN}
+    UNION SELECT category FROM recurring WHERE category IS NOT NULL AND ${OWN} ORDER BY 1
+  `).all(uid, uid) as { category: string }[]).map((r) => r.category);
+
+/** Throws unless every given account id belongs to the user (form fields are attacker-controlled). */
+export function assertOwnAccounts(uid: number, ...ids: (number | null)[]) {
+  for (const id of ids) {
+    if (id !== null && !db.prepare("SELECT 1 FROM accounts WHERE id = ? AND user_id = ?").get(id, uid)) throw new Error("Compte inconnu");
+  }
+}
 
 /** Turns recurrences whose day has come into real transactions (idempotent, catches up missed months). */
-export function postDueRecurring(today = localToday()) {
+export function postDueRecurring(uid: number, today = localToday()) {
   const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)");
   const mark = db.prepare("UPDATE recurring SET last_posted = ? WHERE id = ?");
   tx(() => {
-    for (const r of getRecurring()) {
+    for (const r of getRecurring(uid)) {
       const dates = duePosts(r, today);
       for (const d of dates) {
         insert.run(r.account_id, r.label, r.amount, d, r.category);
@@ -41,5 +52,8 @@ export function postDueRecurring(today = localToday()) {
   });
 }
 
-/** Display currency, read once per request. Amounts are not converted: it is a display unit. */
-export const getCurrency = cache(() => getSetting("currency") ?? "EUR");
+/** Deletes all of a user's banking data (accounts cascade to operations and forecasts). Login and passkeys stay. */
+export const wipeBudget = (uid: number) => db.prepare("DELETE FROM accounts WHERE user_id = ?").run(uid);
+
+/** Display currency of the logged-in user. Amounts are not converted: it is a display unit. */
+export const getCurrency = cache(async () => (await currentUser())?.currency ?? "EUR");

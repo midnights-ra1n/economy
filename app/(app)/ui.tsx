@@ -26,11 +26,11 @@ export function Card({ title, children, action, plain }: { title?: string; child
 }
 
 /** Amounts in Geist Mono; `sans` keeps the text face (large headlines, where mono spacing looks loose). */
-export function Money({ cents, signed, sans, className = "" }: { cents: number; signed?: boolean; sans?: boolean; className?: string }) {
+export async function Money({ cents, signed, sans, className = "" }: { cents: number; signed?: boolean; sans?: boolean; className?: string }) {
   const color = !signed ? "" : cents < 0 ? "text-loss" : "text-gain";
   return (
     <span className={`whitespace-nowrap tabular-nums ${sans ? "" : "font-mono tracking-tight"} ${color} ${className}`}>
-      {signed && cents > 0 ? "+" : ""}{fmt(cents, getCurrency())}
+      {signed && cents > 0 ? "+" : ""}{fmt(cents, await getCurrency())}
     </span>
   );
 }
@@ -87,7 +87,7 @@ const segment =
  * Form shared by quick add, subscriptions and planned expenses: type, amount and label first,
  * the rest has sensible defaults (first account, today).
  */
-export function EntryForm({
+export async function EntryForm({
   action, accounts, categories, when, today, transfer = true, submit = "Ajouter",
 }: {
   action: (f: FormData) => Promise<void>;
@@ -116,7 +116,7 @@ export function EntryForm({
           name="amount" required inputMode="decimal" pattern="\d+([.,]\d{1,2})?" placeholder="0,00" aria-label="Montant"
           className="w-full bg-transparent py-2 font-mono text-4xl tracking-tight placeholder:text-muted/40 focus:outline-none"
         />
-        <span className="font-mono text-xl text-muted">{getCurrency()}</span>
+        <span className="font-mono text-xl text-muted">{await getCurrency()}</span>
       </div>
       <input name="label" required maxLength={80} placeholder="Libellé (Courses, Loyer, Netflix…)" aria-label="Libellé" className={input} />
       <div className="grid grid-cols-2 gap-3">

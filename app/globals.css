@@ -1,5 +1,12 @@
 @import "tailwindcss";
 
+/* Desktop layout (top navbar): wide screens, or any screen with a mouse even when the window is narrow. */
+@custom-variant desk {
+  @media (min-width: 40rem), (pointer: fine) {
+    @slot;
+  }
+}
+
 /* Neutral, cool greys with a single cobalt accent used sparingly (charts, active tab, add button). */
 :root {
   --paper: #f6f6f7;

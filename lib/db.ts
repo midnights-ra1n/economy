@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, existsSync, mkdirSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 
@@ -20,6 +20,7 @@ function open() {
     PRAGMA busy_timeout = 5000; -- first: other processes may be creating the schema concurrently
     PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
+    PRAGMA secure_delete = ON; -- erased data is overwritten, not left in free pages
 
     CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     CREATE TABLE IF NOT EXISTS credentials (
@@ -49,17 +50,82 @@ function open() {
       label TEXT NOT NULL, amount INTEGER NOT NULL, date TEXT NOT NULL, category TEXT
     );
   `);
+  migrate(d);
   for (const f of [file, `${file}-wal`, `${file}-shm`]) if (existsSync(/*turbopackIgnore: true*/ f)) chmodSync(/*turbopackIgnore: true*/ f, 0o600);
-  const owned = d.prepare("SELECT 1 FROM settings WHERE key = 'password_hash'").get();
-  if (!owned && process.env.NEXT_PHASE !== "phase-production-build") {
-    // First run: whoever reaches the public URL first must not be able to claim the app.
-    // A fresh code per start, stored hashed: only the container logs ever show it.
-    const code = randomBytes(6).toString("hex");
-    d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_code_hash', ?)").run(sha256(code));
-    console.log(`\n[economy] Aucun compte créé. Code d'initialisation : ${code}\n`);
+  if (process.env.NEXT_PHASE !== "phase-production-build") {
+    const { n } = d.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
+    console.log(`[economy] Base ${file} : ${n} utilisateur(s).`);
+    if (!persistent()) console.warn(`[economy] ATTENTION : ${dir} n'est pas un volume monté. Les données seront perdues si le conteneur est recréé.`);
+    if (!n) issueSetupCode(d);
   }
   return d;
 }
+
+/**
+ * Schema changes, applied once each in order and recorded in PRAGMA user_version.
+ * Never edit a released step: add a new one, so existing databases upgrade in place on the next start.
+ */
+function migrate(d: DatabaseSync) {
+  const steps = [
+    // v1: multi-user. The single owner of a v0 database becomes the first admin and keeps all its data.
+    () => {
+      d.exec(`
+        CREATE TABLE users (
+          id INTEGER PRIMARY KEY, username TEXT NOT NULL UNIQUE COLLATE NOCASE, password_hash TEXT NOT NULL,
+          role TEXT NOT NULL DEFAULT 'user' CHECK (role IN ('admin','user')), currency TEXT NOT NULL DEFAULT 'EUR',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')), last_login TEXT
+        );
+        ALTER TABLE accounts ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+        ALTER TABLE credentials ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+        ALTER TABLE sessions ADD COLUMN user_id INTEGER REFERENCES users(id) ON DELETE CASCADE;
+        CREATE INDEX accounts_user ON accounts(user_id);
+      `);
+      const get = (k: string) => (d.prepare("SELECT value FROM settings WHERE key = ?").get(k) as { value: string } | undefined)?.value;
+      const hash = get("password_hash");
+      if (hash) {
+        const { lastInsertRowid: uid } = d.prepare("INSERT INTO users (username, password_hash, role, currency) VALUES (?, ?, 'admin', ?)")
+          .run(get("username") ?? "admin", hash, get("currency") ?? "EUR");
+        for (const t of ["accounts", "credentials", "sessions"]) d.prepare(`UPDATE ${t} SET user_id = ?`).run(uid);
+      }
+      d.exec("DELETE FROM settings WHERE key IN ('username', 'password_hash', 'currency')");
+    },
+  ];
+  const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
+  for (let v = version; v < steps.length; v++) {
+    d.exec("BEGIN IMMEDIATE");
+    try {
+      // Re-read inside the lock: another process (build worker) may have migrated meanwhile.
+      if ((d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version > v) { d.exec("COMMIT"); continue; }
+      steps[v]();
+      d.exec(`PRAGMA user_version = ${v + 1}`);
+      d.exec("COMMIT");
+    } catch (e) {
+      d.exec("ROLLBACK");
+      throw e;
+    }
+  }
+}
+
+/** No user yet: whoever reaches the public URL first must not be able to claim the app.
+ * A fresh code per start (and after a reset), stored hashed: only the server logs ever show it. */
+export function issueSetupCode(d = db) {
+  const code = randomBytes(6).toString("hex");
+  d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_code_hash', ?)").run(sha256(code));
+  console.log(`\n[economy] Aucun compte créé. Code d'initialisation : ${code}\n`);
+}
+
+/** True when the data dir is its own mount (Docker volume, Proxmox mount point), so it outlives the container.
+ * Outside Linux containers there is nothing to check. */
+export function persistent() {
+  if (dir !== "/data") return true;
+  try {
+    return readFileSync("/proc/self/mountinfo", "utf8").split("\n").some((l) => l.split(" ")[4] === dir);
+  } catch {
+    return true;
+  }
+}
+
+export const dbPath = file;
 
 // function (hoisted): open() runs at module init, before later consts exist.
 export function sha256(s: string) {

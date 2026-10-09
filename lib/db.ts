@@ -184,6 +184,7 @@ export function persistent() {
 }
 
 export const dbPath = file;
+export const dataDir = dir;
 
 // function (hoisted): open() runs at module init, before later consts exist.
 export function sha256(s: string) {

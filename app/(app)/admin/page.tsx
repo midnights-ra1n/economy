@@ -1,13 +1,13 @@
 import { existsSync, statSync } from "node:fs";
 import { requireAdmin } from "@/lib/auth";
-import { db, dbPath, persistent } from "@/lib/db";
+import { db, dbPath, getSetting, persistent } from "@/lib/db";
 import { getT } from "@/lib/locale";
 import { VERSION, latestRelease, updateCheckEnabled } from "@/lib/version";
-import { mailEnabled, mailHost } from "@/lib/mail";
+import { smtpConfig } from "@/lib/mail";
 import { isNewer } from "@/lib/semver";
 import { ConfirmButton, MessageForm } from "../client";
 import { Card, Field, PageHeader, button, input } from "../ui";
-import { createUser, deleteUser, resetApp, resetPassword, revokeSessions, setRole, wipeUser } from "./actions";
+import { createUser, deleteUser, resetApp, resetPassword, revokeSessions, saveSmtp, setRole, testSmtp, wipeUser } from "./actions";
 
 type UserRow = {
   id: number; username: string; role: "admin" | "user"; created_at: string; last_login: string | null;
@@ -50,6 +50,9 @@ export default async function Admin() {
   const { user_version } = db.prepare("PRAGMA user_version").get() as { user_version: number };
   const { t, tn, rich, intl } = await getT();
   const latest = await latestRelease({ wait: true });
+  const smtp = smtpConfig();
+  const savedPass = !!getSetting("smtp_pass");
+  const { email: myEmail } = db.prepare("SELECT email FROM users WHERE id = ?").get(me.id) as { email: string | null };
   const outdated = !!latest && isNewer(latest.version, VERSION);
   const day = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleDateString(intl, { day: "numeric", month: "short", year: "numeric" });
 
@@ -179,10 +182,51 @@ export default async function Admin() {
       </Card>
 
       <Card title={t("adm.mail")}>
-        <p className="flex items-start gap-2.5 text-sm">
-          <span className={`mt-1.5 size-2 shrink-0 rounded-full ${mailEnabled ? "bg-gain" : "bg-muted/50"}`} aria-hidden />
-          <span className={mailEnabled ? "" : "text-muted"}>{mailEnabled ? t("adm.mailOn", { host: mailHost! }) : t("adm.mailOff")}</span>
+        <p className="mb-1 flex items-start gap-2.5 text-sm">
+          <span className={`mt-1.5 size-2 shrink-0 rounded-full ${smtp ? "bg-gain" : "bg-muted/50"}`} aria-hidden />
+          <span className={smtp ? "" : "text-muted"}>{smtp ? t("adm.mailOn", { from: smtp.from, host: smtp.host }) : t("adm.mailOff")}</span>
         </p>
+        <p className="mb-5 text-sm text-muted">{t("adm.mailHelp")}</p>
+        <MessageForm action={saveSmtp} className="grid gap-3 sm:grid-cols-6">
+          <Field label={t("adm.smtpHost")} className="sm:col-span-3">
+            <input name="host" defaultValue={smtp?.host} placeholder="smtp.mondomaine.fr" autoComplete="off" spellCheck={false} className={input} />
+          </Field>
+          <Field label={t("adm.smtpPort")} className="sm:col-span-1">
+            <input name="port" type="number" min={1} max={65535} defaultValue={smtp?.port ?? 587} className={input} />
+          </Field>
+          <Field label={t("adm.smtpSecurity")} className="sm:col-span-2">
+            <select name="security" defaultValue={smtp?.security ?? "starttls"} className={input}>
+              {(["starttls", "tls", "none"] as const).map((v) => <option key={v} value={v}>{t(`adm.sec.${v}`)}</option>)}
+            </select>
+          </Field>
+          <Field label={t("adm.smtpFrom")} className="sm:col-span-3">
+            <input name="from" type="email" defaultValue={smtp?.from} placeholder="no-reply@mondomaine.fr" autoComplete="off" className={input} />
+          </Field>
+          <Field label={t("adm.smtpFromName")} className="sm:col-span-3">
+            <input name="from_name" maxLength={80} defaultValue={smtp?.fromName || "Economy"} className={input} />
+          </Field>
+          <Field label={t("adm.smtpUser")} className="sm:col-span-3">
+            <input name="user" defaultValue={smtp?.user} autoComplete="off" spellCheck={false} className={input} />
+          </Field>
+          <Field label={t("adm.smtpPass")} className="sm:col-span-3">
+            {/* Never prefilled: the saved password stays on the server. */}
+            <input name="pass" type="password" autoComplete="new-password" placeholder={savedPass ? t("adm.smtpPassKept") : ""} className={input} />
+          </Field>
+          {savedPass && (
+            <label className="flex items-center gap-2 text-sm sm:col-span-6">
+              <input type="checkbox" name="clear_pass" className="size-4 accent-[var(--loss)]" />
+              {t("adm.smtpPassClear")}
+            </label>
+          )}
+          <p className="text-xs text-muted sm:col-span-6">{t("adm.smtpOffHint")}</p>
+          <button className={`${button} sm:col-span-6`}>{t("common.save")}</button>
+        </MessageForm>
+        <MessageForm action={testSmtp} className="mt-5 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:flex-wrap sm:items-end">
+          <Field label={t("adm.testTo")} className="flex-1">
+            <input name="to" type="email" required defaultValue={myEmail ?? ""} placeholder="vous@exemple.fr" className={input} />
+          </Field>
+          <button disabled={!smtp} className="rounded-xl border border-line px-4 py-2.5 font-medium transition-colors hover:bg-paper disabled:opacity-40">{t("adm.testButton")}</button>
+        </MessageForm>
       </Card>
 
       <Card title={t("adm.newUser")}>

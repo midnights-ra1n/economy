@@ -23,7 +23,7 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 **Statements**
 - **Account statements as PDFs**: opening and closing balances, money in and out, every transaction with its running balance, spending by category
 - Made on demand for a month, a week or any range, or **automatically every week or month**
-- **Sent by e-mail** with the PDF attached, if the server has SMTP set up
+- **Sent by e-mail** with the PDF attached, through a mail server set up in the admin panel
 - All statements in one place, ready to download, with optional **automatic cleanup** (after 3, 6, 12 or 24 months)
 
 **Everyday use**
@@ -127,11 +127,6 @@ The database is created in `./data` (change it with `DATA_DIR`).
 | `PORT`     | `3000`                           | HTTP port.                                                              |
 | `UPDATE_CHECK` | `true`                       | Set to `false` to stop checking GitHub for new releases.                |
 | `SETUP_WINDOW_MINUTES` | `10`                 | How long the first-account screen stays open after a start or a reset.  |
-| `SMTP_HOST`    |                              | SMTP server for e-mailed statements. E-mail is off when unset.          |
-| `SMTP_PORT`    | `587`                        | `587` uses STARTTLS, `465` TLS.                                         |
-| `SMTP_SECURE`  | `true` on port 465           | Force TLS on or off.                                                    |
-| `SMTP_USER`, `SMTP_PASS` |                    | SMTP login, if the server needs one.                                    |
-| `SMTP_FROM`    |                              | Sender, e.g. `Economy <budget@example.com>`. Required for e-mail.       |
 
 ## Putting it online
 
@@ -191,16 +186,13 @@ On Proxmox, pull the new image and recreate the container with the same `/data` 
 - **Automatic cleanup** deletes statements older than the chosen number of months.
 - A statement is a snapshot: editing transactions later does not change it. Erasing your banking data deletes your statements too.
 
-E-mail needs an SMTP server, set with the `SMTP_*` variables (see [Configuration](#configuration)); the admin panel shows whether it is set up. For example, in `docker-compose.yml`:
+### Setting up e-mail
 
-```yaml
-    environment:
-      SMTP_HOST: smtp.example.com
-      SMTP_PORT: 587
-      SMTP_USER: budget@example.com
-      SMTP_PASS: ${SMTP_PASS}          # from a .env file next to docker-compose.yml, not committed
-      SMTP_FROM: Economy <budget@example.com>
-```
+1. An administrator enters the outgoing mail server in **Admin → E-mail**: SMTP server, port and security (STARTTLS on 587, or TLS on 465), username and password, and the sender, for example `no-reply@example.com` with the name `Economy`.
+2. Each user enters their own address in **Settings → E-mail address**: their statements go there.
+3. **Send a test e-mail**, in the admin panel or in Settings, sends a sample statement with its PDF attached. Receiving it confirms that both sending and PDF generation work.
+
+The SMTP password is encrypted (AES-256-GCM) with a key stored outside the database, in `/data/secret.key`. A copy of `economy.db` alone does not reveal it, and it is never sent back to the browser. Keep `secret.key` with the database when you move it; otherwise, enter the password again.
 
 ## Users and administration
 
@@ -231,7 +223,7 @@ Strings live in [`lib/i18n.ts`](lib/i18n.ts). To add a language, add a dictionar
 - WebAuthn challenges are stored server-side, single-use, and expire after 5 minutes.
 - Every page and server action checks the session again, and admin actions check the role again. Every query on banking data is filtered by user, and account ids sent by forms are verified.
 - Deleted data is overwritten (`PRAGMA secure_delete`). A full reset also empties the WAL journal and compacts the database.
-- SMTP credentials only come from environment variables: they are never stored in the database.
+- The SMTP password is the only secret the app must read back: it is encrypted with a key kept outside the database (`/data/secret.key`, mode 600) and never shown again in the interface.
 - Security headers are set (HSTS, `X-Frame-Options`, `nosniff`, …), and the app asks search engines not to index it.
 
 ## Development

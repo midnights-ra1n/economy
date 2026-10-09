@@ -19,7 +19,8 @@ const BOTTOM = H - 64; // above the footer
 const font = (file: string) => path.join(/*turbopackIgnore: true*/ process.cwd(), "assets/fonts", file);
 const FONTS = { sans: "Geist-Regular.ttf", medium: "Geist-Medium.ttf", bold: "Geist-SemiBold.ttf", mono: "GeistMono-Regular.ttf", monoBold: "GeistMono-Medium.ttf" };
 
-export type StatementDoc = { user: string; currency: string; period: Period; figures: Figures; issued: Date };
+/** `sample`: demo figures of a test e-mail, labelled as such in the header. */
+export type StatementDoc = { user: string; currency: string; period: Period; figures: Figures; issued: Date; sample?: boolean };
 
 /** Human name of a period: "octobre 2026", "5–11 octobre 2026", "October 5 – 11, 2026"… */
 export function periodLabel(period: Period, intl: string) {
@@ -58,6 +59,7 @@ export function statementPdf(doc: StatementDoc, { t, intl }: Pick<T, "t" | "intl
   pdf.restore();
   text("Economy", M + 30, 44, { f: "bold", size: 12.5, color: C.barInk });
   text(t("st.title"), M, 45, { f: "medium", size: 10, color: C.barAccent, width: CW, align: "right" });
+  if (doc.sample) text(t("st.sample"), M, 60, { size: 9, color: "#a3a3ab", width: CW, align: "right" });
   text(periodLabel(doc.period, intl), M, 86, { f: "bold", size: 28, color: C.barInk, width: CW });
   text(t("st.issued", { date: doc.issued.toLocaleDateString(intl, { day: "numeric", month: "long", year: "numeric" }), name: doc.user }), M, 128, {
     size: 9.5, color: "#a3a3ab", width: CW,

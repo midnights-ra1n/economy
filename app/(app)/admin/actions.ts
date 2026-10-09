@@ -6,8 +6,11 @@ import {
   assertNotLocked, destroyAllSessions, destroySession, hashPassword, newPassword, newUsername, recordFailure, requireAdmin, verifyPassword,
 } from "@/lib/auth";
 import { wipeBudget } from "@/lib/budget";
-import { db, openSetupWindow, tx } from "@/lib/db";
+import { db, getSetting, openSetupWindow, setSetting, tx } from "@/lib/db";
 import { getT } from "@/lib/locale";
+import { isEmail, throttle } from "@/lib/mail";
+import { sendTestEmail } from "@/lib/reports";
+import { seal } from "@/lib/secret";
 
 type State = { error?: string; ok?: string };
 
@@ -107,4 +110,50 @@ export async function resetApp(_: State, form: FormData): Promise<State> {
     return { error: te(e) };
   }
   redirect("/login");
+}
+
+const SMTP_KEYS = ["host", "port", "security", "user", "pass", "from", "from_name"];
+
+/** Outgoing e-mail server. An empty server turns e-mail off; an empty password keeps the saved one. */
+export async function saveSmtp(_: State, form: FormData): Promise<State> {
+  await requireAdmin();
+  return attempt((t) => {
+    const f = (k: string, max = 200) => String(form.get(k) ?? "").trim().slice(0, max);
+    const host = f("host");
+    if (!host) {
+      for (const k of SMTP_KEYS) db.prepare("DELETE FROM settings WHERE key = ?").run(`smtp_${k}`);
+      return t("ok.smtpOff");
+    }
+    const port = Number(f("port"));
+    const security = f("security");
+    const from = f("from");
+    if (!/^[a-z0-9.-]+$/i.test(host) || !Number.isInteger(port) || port < 1 || port > 65535) throw new Error("err.smtpServer");
+    if (!["starttls", "tls", "none"].includes(security)) throw new Error("Invalid security");
+    if (!isEmail(from)) throw new Error("err.smtpFrom");
+    tx(() => {
+      for (const [k, v] of [["host", host], ["port", String(port)], ["security", security], ["user", f("user")], ["from", from], ["from_name", f("from_name", 80)]]) {
+        setSetting(`smtp_${k}`, v);
+      }
+      const pass = String(form.get("pass") ?? "");
+      if (pass) setSetting("smtp_pass", seal(pass));
+      else if (!f("user") || form.get("clear_pass")) db.prepare("DELETE FROM settings WHERE key = 'smtp_pass'").run();
+    });
+    return t("ok.smtpSaved");
+  });
+}
+
+/** Sends a sample statement with the saved settings, to check the server and the PDF in one go. */
+export async function testSmtp(_: State, form: FormData): Promise<State> {
+  const admin = await requireAdmin();
+  const { t, te, locale } = await getT();
+  try {
+    const to = String(form.get("to") ?? "").trim();
+    if (!isEmail(to)) throw new Error("err.email");
+    if (!getSetting("smtp_host")) throw new Error("err.mailOff");
+    throttle(`user-${admin.id}`);
+    await sendTestEmail(to, admin, locale);
+    return { ok: t("ok.testSent", { email: to }) };
+  } catch (e) {
+    return { error: te(e) };
+  }
 }

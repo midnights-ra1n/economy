@@ -9,6 +9,8 @@ import { CURRENCIES, SCHEMA, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
 import { isLocale } from "@/lib/i18n";
 import { LOCALE_COOKIE, getT } from "@/lib/locale";
+import { isEmail, throttle } from "@/lib/mail";
+import { sendTestEmail } from "@/lib/reports";
 
 // Every action re-checks the session: server actions are public endpoints.
 // Invalid input throws: the forms' HTML validation already blocks honest mistakes, so these messages
@@ -195,6 +197,36 @@ export async function wipeMyData(_: { error?: string; ok?: string }, form: FormD
     wipeBudget(uid);
     await done();
     return { ok: t("ok.wiped") };
+  } catch (e) {
+    return { error: te(e) };
+  }
+}
+
+/** The user's own address: where their statements and test e-mails go. Empty removes it. */
+export async function saveEmail(_: { error?: string; ok?: string }, form: FormData) {
+  const { id } = await requireUser();
+  const { t, te } = await getT();
+  try {
+    const email = String(form.get("email") ?? "").trim();
+    if (email && !isEmail(email)) throw new Error("err.email");
+    db.prepare("UPDATE users SET email = ? WHERE id = ?").run(email || null, id);
+    await done();
+    return { ok: t(email ? "ok.emailSaved" : "ok.emailRemoved") };
+  } catch (e) {
+    return { error: te(e) };
+  }
+}
+
+/** Sends a sample statement to the user's address: checks the server's e-mail settings and PDF generation. */
+export async function sendMyTestEmail() {
+  const user = await requireUser();
+  const { t, te, locale } = await getT();
+  try {
+    const { email } = db.prepare("SELECT email FROM users WHERE id = ?").get(user.id) as { email: string | null };
+    if (!email) throw new Error("err.noEmail");
+    throttle(`user-${user.id}`);
+    await sendTestEmail(email, user, locale);
+    return { ok: t("ok.testSent", { email }) };
   } catch (e) {
     return { error: te(e) };
   }

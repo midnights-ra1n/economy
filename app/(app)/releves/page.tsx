@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { localToday } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
@@ -21,6 +22,8 @@ export default async function Releves() {
   const user = await requireUser();
   const { t, intl } = await getT();
   const settings = getReportSettings(user.id);
+  // E-mail needs both the server (admin panel) and the user's own address (Settings).
+  const canMail = mailEnabled() && !!settings.email;
   const statements = getStatements(user.id);
   const today = localToday();
   const kb = new Intl.NumberFormat(intl, { style: "unit", unit: "kilobyte", maximumFractionDigits: 0 });
@@ -81,7 +84,7 @@ export default async function Releves() {
                       <a href={`/releves/${s.id}?download`} className={iconButton} aria-label={t("rel.download")} title={t("rel.download")}>
                         {svg("M12 4v11M7 10l5 5 5-5M5 20h14")}
                       </a>
-                      {mailEnabled && settings.email && (
+                      {canMail && (
                         <MessageForm action={sendStatement} className="contents">
                           <input type="hidden" name="id" value={s.id} />
                           <button className={iconButton} aria-label={t("rel.send")} title={t("rel.send")}>
@@ -112,14 +115,14 @@ export default async function Releves() {
                   {(["off", "weekly", "monthly"] as const).map((f) => <option key={f} value={f}>{t(`rel.freq.${f}`)}</option>)}
                 </select>
               </Field>
-              <Field label={t("rel.email")}>
-                <input name="email" type="email" maxLength={254} defaultValue={settings.email ?? ""} autoComplete="email" placeholder="vous@exemple.fr" className={input} />
-              </Field>
-              <label className={`flex items-start gap-2.5 text-sm ${mailEnabled ? "" : "opacity-50"}`}>
-                <input type="checkbox" name="report_email" defaultChecked={!!settings.report_email} disabled={!mailEnabled} className="mt-0.5 size-4 accent-[var(--accent)]" />
+              <label className={`flex items-start gap-2.5 text-sm ${canMail ? "" : "opacity-50"}`}>
+                <input type="checkbox" name="report_email" defaultChecked={!!settings.report_email} disabled={!canMail} className="mt-0.5 size-4 accent-[var(--accent)]" />
                 <span>{t("rel.emailToggle")}</span>
               </label>
-              {!mailEnabled && <p className="text-xs text-muted">{t("rel.mailOff")}</p>}
+              <p className="text-xs text-muted">
+                {!mailEnabled() ? t("rel.mailOff") : settings.email ? t("rel.sendTo", { email: settings.email }) : t("rel.noEmail")}{" "}
+                {mailEnabled() && <Link href="/reglages" className="text-ink underline">{t("nav.settings")}</Link>}
+              </p>
               <Field label={t("rel.retention")}>
                 <select name="retention" defaultValue={settings.statement_retention ?? ""} className={input}>
                   <option value="">{t("rel.keepAll")}</option>

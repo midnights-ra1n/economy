@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import { db } from "@/lib/db";
 import { getT } from "@/lib/locale";
+import { throttle } from "@/lib/mail";
 import { periodLabel } from "@/lib/pdf";
 import { cleanupStatements, createStatement, emailStatement } from "@/lib/reports";
 import { periodOf, type Period } from "@/lib/statement";
@@ -47,12 +48,10 @@ export async function saveReportSettings(_: State, form: FormData): Promise<Stat
   try {
     const frequency = field(form, "frequency");
     if (!["off", "weekly", "monthly"].includes(frequency)) throw new Error("Invalid frequency");
-    const email = field(form, "email");
-    if (email && (email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))) throw new Error("err.email");
     const retention = Number(field(form, "retention")) || null;
     if (retention !== null && !RETENTIONS.includes(retention)) throw new Error("Invalid retention");
-    db.prepare("UPDATE users SET report_frequency = ?, email = ?, report_email = ?, statement_retention = ? WHERE id = ?")
-      .run(frequency, email || null, form.get("report_email") ? 1 : 0, retention, id);
+    db.prepare("UPDATE users SET report_frequency = ?, report_email = ?, statement_retention = ? WHERE id = ?")
+      .run(frequency, form.get("report_email") ? 1 : 0, retention, id);
     cleanupStatements(id);
     revalidatePath("/releves");
     return { ok: t("rel.saved") };
@@ -61,15 +60,11 @@ export async function saveReportSettings(_: State, form: FormData): Promise<Stat
   }
 }
 
-// shortcut: in-memory, per process; enough to stop a burst of e-mails from one account.
-const lastSend = new Map<number, number>();
-
 export async function sendStatement(_: State, form: FormData): Promise<State> {
   const { id } = await requireUser();
   const { t, te } = await getT();
   try {
-    if (Date.now() - (lastSend.get(id) ?? 0) < 30e3) throw new Error("err.wait");
-    lastSend.set(id, Date.now());
+    throttle(`user-${id}`);
     await emailStatement(id, Number(form.get("id")));
     const { email } = db.prepare("SELECT email FROM users WHERE id = ?").get(id) as { email: string };
     revalidatePath("/releves");

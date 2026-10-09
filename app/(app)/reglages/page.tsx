@@ -7,7 +7,8 @@ import { VERSION } from "@/lib/version";
 import Link from "next/link";
 import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
-import { importData, savePreferences, wipeMyData } from "../actions";
+import { importData, saveEmail, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
+import { mailEnabled } from "@/lib/mail";
 import { ConfirmButton, MessageForm } from "../client";
 import { Card, Field, PageHeader, button, input, listClass } from "../ui";
 
@@ -27,6 +28,7 @@ export default async function Reglages() {
     id: string; name: string; created_at: string;
   }[];
   const { t, rich, intl, locale } = await getT();
+  const { email } = db.prepare("SELECT email FROM users WHERE id = ?").get(user.id) as { email: string | null };
   return (
     <>
       <PageHeader
@@ -50,6 +52,20 @@ export default async function Reglages() {
           <button className={button}>{t("common.save")}</button>
         </form>
         <p className="mt-3 text-sm text-muted">{t("set.currencyHelp")}</p>
+      </Card>
+
+      <Card title={t("set.email")}>
+        <p className="mb-3 text-sm text-muted">{t("set.emailHelp")}</p>
+        <MessageForm action={saveEmail} className="flex flex-col gap-3 sm:flex-row sm:items-end">
+          <Field label={t("set.email")} className="flex-1">
+            <input name="email" type="email" maxLength={254} defaultValue={email ?? ""} autoComplete="email" placeholder="vous@exemple.fr" className={input} />
+          </Field>
+          <button className={button}>{t("common.save")}</button>
+        </MessageForm>
+        <MessageForm action={sendMyTestEmail} className="mt-5 flex flex-col gap-3 border-t border-line pt-5 sm:flex-row sm:flex-wrap sm:items-center">
+          <p className="flex-1 text-sm text-muted">{mailEnabled() ? t("set.emailTestHelp") : t("rel.mailOff")}</p>
+          <button disabled={!mailEnabled() || !email} className={`${ghost} disabled:opacity-40`}>{t("set.emailTest")}</button>
+        </MessageForm>
       </Card>
 
       <Card title={t("set.password")}>

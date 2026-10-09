@@ -2,10 +2,10 @@ import { ORIGIN } from "./auth";
 import { OWN } from "./budget";
 import { db, log } from "./db";
 import { localToday } from "./forecast";
-import { translator, type Locale } from "./i18n";
+import { translator, type Key, type Locale } from "./i18n";
 import { mailEnabled, sendMail, statementMail } from "./mail";
 import { periodLabel, statementPdf, type StatementDoc } from "./pdf";
-import { lastCompleted, statementFigures, type Frequency, type Period } from "./statement";
+import { lastCompleted, periodOf, statementFigures, type Frequency, type Period } from "./statement";
 
 type Owner = {
   id: number; username: string; currency: string; locale: Locale | null; email: string | null;
@@ -95,7 +95,7 @@ export async function runReports() {
         s = { id: await createStatement(id, period), emailed_at: null };
         log(`Statement ${periodLabel(period, "en-US")} created for user ${id}.`);
       }
-      if (u.report_email && u.email && mailEnabled && !s.emailed_at) await emailStatement(id, s.id);
+      if (u.report_email && u.email && mailEnabled() && !s.emailed_at) await emailStatement(id, s.id);
     } catch (e) {
       log(`Statement for user ${id} failed: ${e instanceof Error ? e.message : e}`);
     }
@@ -116,4 +116,30 @@ export function startReports() {
   void pass();
   g.reports = setInterval(pass, 3600e3);
   g.reports.unref();
+}
+
+/**
+ * Test e-mail: a sample statement of the current month (demo figures, labelled "Example") rendered and
+ * attached like a real one, so one click checks both SMTP and PDF generation.
+ */
+export async function sendTestEmail(to: string, user: { username: string; currency: string }, locale: Locale) {
+  const tr = translator(locale);
+  const { t } = tr;
+  const period = periodOf("month", localToday());
+  const day = (d: number) => `${period.start.slice(0, 8)}${String(d).padStart(2, "0")}`;
+  const tx = (account_id: number, d: number, label: Key, category: Key | null, amount: number) =>
+    ({ account_id, date: day(d), label: t(label), category: category && t(category), amount });
+  const transfer = (n: number) => ({ ...tx(n, 5, "sample.savings", null, n === 1 ? -30000 : 30000), category: "Virement" });
+  const figures = statementFigures(
+    [{ id: 1, name: t("sample.checking"), kind: "courant", initial_balance: 152000 }, { id: 2, name: t("sample.savingsAccount"), kind: "epargne", initial_balance: 480000 }],
+    [
+      tx(1, 1, "sample.salary", "sample.income", 248000), tx(1, 2, "sample.rent", "sample.housing", -82000),
+      tx(1, 3, "sample.groceries", "sample.food", -6450), transfer(1), transfer(2),
+      tx(1, 8, "sample.streaming", "sample.leisure", -1399), tx(1, 12, "sample.groceries", "sample.food", -5120),
+    ],
+    period.start, period.end,
+  );
+  const doc = { user: user.username, currency: user.currency, period, figures, issued: new Date(), sample: true };
+  const pdf = await statementPdf(doc, tr);
+  await sendMail(to, statementMail(doc, tr, `${ORIGIN}/releves`), [{ filename: `${t("sample.file")}.pdf`, content: pdf }]);
 }

@@ -83,3 +83,17 @@ export function forecast(accounts: Account[], recurring: Recurring[], planned: P
   }
   return { months: result, alerts };
 }
+
+/**
+ * Running total of spending at the end of each of the first `days` days of a month, in cents.
+ * Transfers are not spending; operations dated after `days` (entered ahead, not spent yet) are left out.
+ */
+export function cumulativeSpending(txs: { date: string; amount: number; category: string | null }[], days: number): number[] {
+  const perDay = Array<number>(days).fill(0);
+  for (const t of txs) {
+    const i = Number(t.date.slice(8)) - 1;
+    if (t.amount < 0 && t.category !== "Virement" && i < days) perDay[i] -= t.amount;
+  }
+  let sum = 0;
+  return perDay.map((v) => (sum += v));
+}

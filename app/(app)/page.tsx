@@ -1,21 +1,13 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccounts, getCurrency, getPlanned, getRecurring, getTransactions, postDueRecurring, type Transaction } from "@/lib/budget";
-import { addMonths, dayInMonth, fmt, forecast, localToday, ym } from "@/lib/forecast";
+import { addMonths, cumulativeSpending as cumulative, dayInMonth, fmt, forecast, localToday, ym } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
 import { MonthCalendar } from "./calendar";
 import { ForecastChart, SpendingChart } from "./charts";
 import { Card, Empty, Money } from "./ui";
 
 const isSpending = (t: Transaction) => t.amount < 0 && t.category !== "Virement";
-
-/** Running total of spending at the end of each day of the month, in cents. */
-function cumulative(txs: Transaction[], days: number): number[] {
-  const perDay = Array<number>(days).fill(0);
-  for (const t of txs) if (isSpending(t)) perDay[Number(t.date.slice(8)) - 1] -= t.amount;
-  let sum = 0;
-  return perDay.map((v) => (sum += v));
-}
 
 export default async function Dashboard() {
   const { id: uid } = await requireUser();

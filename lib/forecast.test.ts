@@ -1,7 +1,7 @@
 // Run: node --test lib/
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { addMonths, dayInMonth, duePosts, forecast, parseCents } from "./forecast.ts";
+import { addMonths, cumulativeSpending, dayInMonth, duePosts, forecast, parseCents } from "./forecast.ts";
 
 test("months and clamped days", () => {
   assert.equal(addMonths("2026-12", 1), "2027-01");
@@ -44,4 +44,11 @@ test("forecast applies future recurrences, transfers, planned and min-balance al
   assert.deepEqual(months[1].balances, { 1: 61500 - 1500 + 200000 + 3000 - 10000, 2: 44000 });
   assert.equal(alerts.length, 1);
   assert.equal(alerts[0].month, "2026-11");
+});
+
+test("cumulative spending ignores transfers, income and operations dated after today", () => {
+  const tx = (date: string, amount: number, category: string | null = null) => ({ date, amount, category });
+  // Today is the 3rd: the rent entered for the 28th must not turn the total into NaN.
+  const curve = cumulativeSpending([tx("2026-10-01", -1000), tx("2026-10-02", 5000), tx("2026-10-03", -250), tx("2026-10-03", -3000, "Virement"), tx("2026-10-28", -80000)], 3);
+  assert.deepEqual(curve, [1000, 1000, 1250]);
 });

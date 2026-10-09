@@ -41,7 +41,7 @@ const Area = ({ id }: { id: string }) => (
 );
 
 /** Total balance today and at each month end. */
-export function ForecastChart({ points }: { points: { label: string; value: number; display: string }[] }) {
+export function ForecastChart({ points, label }: { points: { label: string; value: number; display: string }[]; label: string }) {
   const H = 160;
   const values = points.map((p) => p.value);
   const min = Math.min(...values);
@@ -53,7 +53,7 @@ export function ForecastChart({ points }: { points: { label: string; value: numb
   }));
   const line = smooth(xy);
   return (
-    <figure aria-label="Projection du solde total">
+    <figure aria-label={label}>
       <div className="relative h-36 sm:h-44">
         <Plot H={H} className="anim-reveal">
           <defs><Area id="forecast-area" /></defs>

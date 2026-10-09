@@ -32,7 +32,7 @@ export const getCategories = (uid: number) =>
 /** Throws unless every given account id belongs to the user (form fields are attacker-controlled). */
 export function assertOwnAccounts(uid: number, ...ids: (number | null)[]) {
   for (const id of ids) {
-    if (id !== null && !db.prepare("SELECT 1 FROM accounts WHERE id = ? AND user_id = ?").get(id, uid)) throw new Error("Compte inconnu");
+    if (id !== null && !db.prepare("SELECT 1 FROM accounts WHERE id = ? AND user_id = ?").get(id, uid)) throw new Error("Unknown account");
   }
 }
 

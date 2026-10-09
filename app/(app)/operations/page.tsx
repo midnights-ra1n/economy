@@ -2,6 +2,7 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccounts, getTransactions, postDueRecurring } from "@/lib/budget";
 import { addMonths, localToday, ym } from "@/lib/forecast";
+import { getT } from "@/lib/locale";
 import { Card, DeleteButton, Empty, Money, Row, listClass } from "../ui";
 
 const arrow = "grid size-9 place-items-center rounded-full border border-line transition-colors hover:bg-surface";
@@ -15,33 +16,35 @@ export default async function Operations({ searchParams }: PageProps<"/operation
   const accounts = getAccounts(uid);
   const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
   const txs = getTransactions(uid, month);
-  const label = new Date(`${month}-01T12:00`).toLocaleDateString("fr-FR", { month: "long", year: "numeric" });
+  const { t, rich, intl } = await getT();
+  const label = new Date(`${month}-01T12:00`).toLocaleDateString(intl, { month: "long", year: "numeric" });
+  const short = (d: string) => new Date(`${d}T12:00`).toLocaleDateString(intl, { day: "2-digit", month: "2-digit" });
 
   return (
     <>
       {!accounts.length && (
-        <Empty>Ajoutez d&apos;abord un <Link href="/comptes" className="text-ink underline">compte</Link>.</Empty>
+        <Empty>{rich("common.needAccount", { link: <Link href="/comptes" className="text-ink underline">{t("common.account")}</Link> })}</Empty>
       )}
 
       <Card
         title={label.charAt(0).toUpperCase() + label.slice(1)}
         action={
           <div className="flex gap-2">
-            <Link href={`?m=${addMonths(month, -1)}`} className={arrow} aria-label="Mois précédent">‹</Link>
-            <Link href={`?m=${addMonths(month, 1)}`} className={arrow} aria-label="Mois suivant">›</Link>
+            <Link href={`?m=${addMonths(month, -1)}`} className={arrow} aria-label={t("ops.previous")}>‹</Link>
+            <Link href={`?m=${addMonths(month, 1)}`} className={arrow} aria-label={t("ops.next")}>›</Link>
           </div>
         }
       >
         {txs.length ? (
           <ul className={listClass}>
-            {txs.map((t) => (
-              <Row key={t.id} lead={`${t.date.slice(8)}/${t.date.slice(5, 7)}`} title={t.label} sub={[names[t.account_id], t.category].filter(Boolean).join(", ")}>
-                <Money cents={t.amount} signed />
-                <DeleteButton table="transactions" id={t.id} />
+            {txs.map((tx) => (
+              <Row key={tx.id} lead={short(tx.date)} title={tx.label} sub={[names[tx.account_id], tx.category === "Virement" ? t("entry.transfer") : tx.category].filter(Boolean).join(", ")}>
+                <Money cents={tx.amount} signed />
+                <DeleteButton table="transactions" id={tx.id} />
               </Row>
             ))}
           </ul>
-        ) : <Empty>Aucune opération ce mois-ci. Ajoutez-en une avec le bouton +.</Empty>}
+        ) : <Empty>{t("ops.empty")}</Empty>}
       </Card>
     </>
   );

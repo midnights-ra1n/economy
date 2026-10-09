@@ -7,6 +7,7 @@ import {
 } from "@/lib/auth";
 import { wipeBudget } from "@/lib/budget";
 import { db, issueSetupCode, tx } from "@/lib/db";
+import { getT } from "@/lib/locale";
 
 type State = { error?: string; ok?: string };
 
@@ -15,18 +16,19 @@ type State = { error?: string; ok?: string };
 /** Target user id from the form. Admins cannot act on themselves here, so at least one admin always remains. */
 function target(form: FormData, adminId: number, allowSelf = false): number {
   const id = Number(form.get("id"));
-  if (!Number.isInteger(id) || !db.prepare("SELECT 1 FROM users WHERE id = ?").get(id)) throw new Error("Utilisateur inconnu");
-  if (!allowSelf && id === adminId) throw new Error("Action impossible sur votre propre compte");
+  if (!Number.isInteger(id) || !db.prepare("SELECT 1 FROM users WHERE id = ?").get(id)) throw new Error("err.unknownUser");
+  if (!allowSelf && id === adminId) throw new Error("err.self");
   return id;
 }
 
-async function attempt(fn: () => string): Promise<State> {
+async function attempt(fn: (t: Awaited<ReturnType<typeof getT>>["t"]) => string): Promise<State> {
+  const { t, te } = await getT();
   try {
-    const ok = fn();
+    const ok = fn(t);
     revalidatePath("/admin");
     return { ok };
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Erreur inattendue." };
+    return { error: te(e) };
   }
 }
 
@@ -36,17 +38,17 @@ async function confirmPassword(adminId: number, form: FormData) {
   const { password_hash } = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(adminId) as { password_hash: string };
   if (!verifyPassword(String(form.get("admin_password") ?? ""), password_hash)) {
     await recordFailure();
-    throw new Error("Votre mot de passe est incorrect.");
+    throw new Error("err.adminPassword");
   }
 }
 
 export async function createUser(_: State, form: FormData): Promise<State> {
   await requireAdmin();
-  return attempt(() => {
+  return attempt((t) => {
     const username = newUsername(form);
     const role = form.get("role") === "admin" ? "admin" : "user";
     db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)").run(username, hashPassword(newPassword(form)), role);
-    return `${username} peut maintenant se connecter.`;
+    return t("ok.userCreated", { name: username });
   });
 }
 
@@ -59,11 +61,11 @@ export async function setRole(form: FormData) {
 
 export async function resetPassword(_: State, form: FormData): Promise<State> {
   const admin = await requireAdmin();
-  return attempt(() => {
+  return attempt((t) => {
     const id = target(form, admin.id);
     db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(newPassword(form)), id);
     destroyAllSessions(id);
-    return "Mot de passe changé. L'utilisateur a été déconnecté partout.";
+    return t("ok.passwordReset");
   });
 }
 
@@ -89,8 +91,10 @@ export async function deleteUser(form: FormData) {
 /** Factory reset: every user and all data go, a new setup code is printed in the logs. */
 export async function resetApp(_: State, form: FormData): Promise<State> {
   const admin = await requireAdmin();
+  const { te } = await getT();
   try {
-    if (String(form.get("confirm_text") ?? "").trim().toUpperCase() !== "RÉINITIALISER") throw new Error("Tapez RÉINITIALISER pour confirmer.");
+    // The word is shown in the admin's language; either one is accepted.
+    if (!["RÉINITIALISER", "RESET"].includes(String(form.get("confirm_text") ?? "").trim().toUpperCase())) throw new Error("err.resetWord");
     await confirmPassword(admin.id, form);
     await destroySession();
     tx(() => {
@@ -100,7 +104,7 @@ export async function resetApp(_: State, form: FormData): Promise<State> {
     // Leave no trace of the old data in the WAL or in free pages.
     db.exec("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;");
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Réinitialisation impossible." };
+    return { error: te(e) };
   }
   redirect("/login");
 }

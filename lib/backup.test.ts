@@ -15,9 +15,9 @@ test("parseBackup accepts a valid backup", () => {
 });
 
 test("parseBackup rejects bad input", () => {
-  assert.throws(() => parseBackup("not json"), /JSON/);
-  assert.throws(() => parseBackup(JSON.stringify({ ...valid, app: "other" })), /sauvegarde/);
-  assert.throws(() => parseBackup(JSON.stringify({ ...valid, currency: "XXX" })), /Devise/);
+  assert.throws(() => parseBackup("not json"), /notJson/);
+  assert.throws(() => parseBackup(JSON.stringify({ ...valid, app: "other" })), /notBackup/);
+  assert.throws(() => parseBackup(JSON.stringify({ ...valid, currency: "XXX" })), /backupCurrency/);
   assert.throws(() => parseBackup(JSON.stringify({ ...valid, planned: undefined })), /planned/);
   const badAmount = { ...valid, transactions: [{ ...valid.transactions[0], amount: 1.5 }] };
   assert.throws(() => parseBackup(JSON.stringify(badAmount)), /transactions\[0\]\.amount/);

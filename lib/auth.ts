@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { cache } from "react";
 import { randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 import { db, getSetting, sha256 } from "./db";
+import type { Locale } from "./i18n";
 
 export const ORIGIN = (process.env.ORIGIN ?? "http://localhost:3000").replace(/\/$/, "");
 export const RP_ID = new URL(ORIGIN).hostname;
@@ -13,7 +14,7 @@ const SESSION_DAYS = 30;
 
 const cookieOpts = (maxAge: number) => ({ httpOnly: true, secure: SECURE, sameSite: "lax" as const, path: "/", maxAge });
 
-export type User = { id: number; username: string; role: "admin" | "user"; currency: string };
+export type User = { id: number; username: string; role: "admin" | "user"; currency: string; locale: Locale | null };
 
 /** The logged-in user, read once per request. */
 export const currentUser = cache(async (): Promise<User | null> => {
@@ -21,7 +22,7 @@ export const currentUser = cache(async (): Promise<User | null> => {
   if (!token) return null;
   // Only the hash is stored, so a leaked DB file does not leak live sessions.
   return (db.prepare(`
-    SELECT u.id, u.username, u.role, u.currency FROM sessions s JOIN users u ON u.id = s.user_id
+    SELECT u.id, u.username, u.role, u.currency, u.locale FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.token_hash = ? AND s.expires_at > ?
   `).get(sha256(token), Date.now()) as User | undefined) ?? null;
 });
@@ -77,7 +78,7 @@ export async function takeChallenge(): Promise<string> {
   const row = db.prepare("DELETE FROM challenges WHERE id = ? AND expires_at > ? RETURNING challenge").get(id, Date.now()) as
     | { challenge: string }
     | undefined;
-  if (!row) throw new Error("Défi expiré, réessayez.");
+  if (!row) throw new Error("Challenge expired, try again.");
   return row.challenge;
 }
 
@@ -97,17 +98,17 @@ const MIN_PASSWORD = 10;
 /** Validated new password (fields `password` and `confirm`). */
 export function newPassword(form: FormData): string {
   const password = field(form, "password");
-  if (password.length < MIN_PASSWORD) throw new Error(`Le mot de passe doit faire au moins ${MIN_PASSWORD} caractères.`);
-  if (password.length > 200) throw new Error("Mot de passe trop long.");
-  if (password !== field(form, "confirm")) throw new Error("Les deux mots de passe ne correspondent pas.");
+  if (password.length < MIN_PASSWORD) throw new Error("err.passwordShort"); // message says 10: keep in sync with MIN_PASSWORD
+  if (password.length > 200) throw new Error("err.passwordLong");
+  if (password !== field(form, "confirm")) throw new Error("err.passwordMismatch");
   return password;
 }
 
 /** Validated, unused username: 1–40 chars, unique ignoring case. */
 export function newUsername(form: FormData): string {
   const username = field(form, "username").trim();
-  if (!username || username.length > 40) throw new Error("Identifiant invalide (1 à 40 caractères).");
-  if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) throw new Error("Cet identifiant est déjà pris.");
+  if (!username || username.length > 40) throw new Error("err.username");
+  if (db.prepare("SELECT 1 FROM users WHERE username = ?").get(username)) throw new Error("err.usernameTaken");
   return username;
 }
 
@@ -135,7 +136,7 @@ async function clientIp() {
 
 export async function assertNotLocked() {
   const f = failures.get(await clientIp());
-  if (f && f.n >= MAX_FAILURES && f.until > Date.now()) throw new Error("Trop de tentatives, réessayez dans 15 minutes.");
+  if (f && f.n >= MAX_FAILURES && f.until > Date.now()) throw new Error("err.locked");
 }
 
 export async function recordFailure() {

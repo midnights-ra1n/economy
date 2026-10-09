@@ -54,8 +54,8 @@ function open() {
   for (const f of [file, `${file}-wal`, `${file}-shm`]) if (existsSync(/*turbopackIgnore: true*/ f)) chmodSync(/*turbopackIgnore: true*/ f, 0o600);
   if (process.env.NEXT_PHASE !== "phase-production-build") {
     const { n } = d.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
-    console.log(`[economy] Base ${file} : ${n} utilisateur(s).`);
-    if (!persistent()) console.warn(`[economy] ATTENTION : ${dir} n'est pas un volume monté. Les données seront perdues si le conteneur est recréé.`);
+    console.log(`[economy] Database ${file}: ${n} user(s).`);
+    if (!persistent()) console.warn(`[economy] WARNING: ${dir} is not a mounted volume. Data will be lost when the container is recreated.`);
     if (!n) issueSetupCode(d);
   }
   return d;
@@ -89,6 +89,8 @@ function migrate(d: DatabaseSync) {
       }
       d.exec("DELETE FROM settings WHERE key IN ('username', 'password_hash', 'currency')");
     },
+    // v2: interface language per user (null: follow the browser).
+    () => d.exec("ALTER TABLE users ADD COLUMN locale TEXT CHECK (locale IN ('fr','en'))"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {
@@ -111,7 +113,7 @@ function migrate(d: DatabaseSync) {
 export function issueSetupCode(d = db) {
   const code = randomBytes(6).toString("hex");
   d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_code_hash', ?)").run(sha256(code));
-  console.log(`\n[economy] Aucun compte créé. Code d'initialisation : ${code}\n`);
+  console.log(`\n[economy] No account yet. Setup code: ${code}\n`);
 }
 
 /** True when the data dir is its own mount (Docker volume, Proxmox mount point), so it outlives the container.

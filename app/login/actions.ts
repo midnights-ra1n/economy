@@ -11,6 +11,9 @@ import {
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
+import { isLocale } from "@/lib/i18n";
+import { LOCALE_COOKIE, getT } from "@/lib/locale";
+import { cookies } from "next/headers";
 import {
   ORIGIN, RP_ID, assertNotLocked, checkSetupCode, clearFailures, createSession, destroyAllSessions, destroySession,
   hashPassword, isSetUp, newPassword, newUsername, recordFailure, requireUser, saveChallenge, takeChallenge, verifyPassword,
@@ -25,18 +28,18 @@ async function attempt(fn: () => Promise<FormState | void>): Promise<FormState> 
   try {
     return (await fn()) ?? {};
   } catch (e) {
-    return { error: e instanceof Error ? e.message : "Erreur inattendue." };
+    return { error: (await getT()).te(e) };
   }
 }
 
 /** First run: the setup code from the container logs proves the caller owns the server. */
 export async function setup(_: FormState, form: FormData): Promise<FormState> {
   const state = await attempt(async () => {
-    if (isSetUp()) throw new Error("Le compte existe déjà.");
+    if (isSetUp()) throw new Error("err.exists");
     await assertNotLocked();
     if (!checkSetupCode(field(form, "code"))) {
       await recordFailure();
-      throw new Error("Code d'initialisation incorrect. Il est affiché dans les logs du conteneur.");
+      throw new Error("err.setupCode");
     }
     const username = newUsername(form);
     const password = newPassword(form);
@@ -60,7 +63,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     const passOk = verifyPassword(field(form, "password"), user?.password_hash ?? null);
     if (!user || !passOk) {
       await recordFailure();
-      throw new Error("Identifiant ou mot de passe incorrect.");
+      throw new Error("err.credentials");
     }
     await clearFailures();
     await createSession(user.id);
@@ -76,12 +79,12 @@ export async function changePassword(_: FormState, form: FormData): Promise<Form
     const { password_hash } = db.prepare("SELECT password_hash FROM users WHERE id = ?").get(user.id) as { password_hash: string };
     if (!verifyPassword(field(form, "current"), password_hash)) {
       await recordFailure();
-      throw new Error("Mot de passe actuel incorrect.");
+      throw new Error("err.currentPassword");
     }
     db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(newPassword(form)), user.id);
     destroyAllSessions(user.id); // other devices must log in again with the new password
     await createSession(user.id);
-    return { ok: "Mot de passe modifié. Les autres appareils sont déconnectés." };
+    return { ok: (await getT()).t("ok.passwordChanged") };
   });
 }
 
@@ -109,7 +112,7 @@ export async function verifyRegistration(response: RegistrationResponseJSON, nam
     expectedOrigin: ORIGIN,
     expectedRPID: RP_ID,
   });
-  if (!verified) throw new Error("Passkey refusée.");
+  if (!verified) throw new Error("Passkey rejected.");
   const { credential } = registrationInfo;
   db.prepare("INSERT INTO credentials (id, public_key, counter, transports, name, user_id) VALUES (?, ?, ?, ?, ?, ?)").run(
     credential.id,
@@ -131,7 +134,7 @@ export async function authenticationOptions() {
 export async function verifyAuthentication(response: AuthenticationResponseJSON) {
   const expectedChallenge = await takeChallenge();
   const cred = db.prepare("SELECT * FROM credentials WHERE id = ?").get(response.id) as Cred | undefined;
-  if (!cred) throw new Error("Passkey inconnue.");
+  if (!cred) throw new Error("Unknown passkey.");
   const { verified, authenticationInfo } = await verifyAuthenticationResponse({
     response,
     expectedChallenge,
@@ -139,7 +142,7 @@ export async function verifyAuthentication(response: AuthenticationResponseJSON)
     expectedRPID: RP_ID,
     credential: { id: cred.id, publicKey: new Uint8Array(cred.public_key), counter: cred.counter },
   });
-  if (!verified) throw new Error("Passkey refusée.");
+  if (!verified) throw new Error("Passkey rejected.");
   db.prepare("UPDATE credentials SET counter = ? WHERE id = ?").run(authenticationInfo.newCounter, cred.id);
   await createSession(cred.user_id);
 }
@@ -153,4 +156,11 @@ export async function deletePasskey(formData: FormData) {
   const user = await requireUser();
   db.prepare("DELETE FROM credentials WHERE id = ? AND user_id = ?").run(String(formData.get("id")), user.id);
   revalidatePath("/reglages");
+}
+
+/** Language switch of the login page (no account yet): only a cookie. */
+export async function setLocaleCookie(form: FormData) {
+  const locale = form.get("locale");
+  if (isLocale(locale)) (await cookies()).set(LOCALE_COOKIE, locale, { maxAge: 365 * 86400, path: "/", sameSite: "lax" });
+  revalidatePath("/login");
 }

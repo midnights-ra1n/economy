@@ -21,7 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
               <rect width="512" height="512" rx="112" fill="var(--paper)" fillOpacity="0.14" />
               <path d="M96 340c60 0 80-120 140-120s70 70 110 70 50-80 70-120" fill="none" stroke="var(--accent)" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
-            <span className="max-[40rem]:hidden">Economy</span>
+            <span className="desk:max-[40rem]:hidden">Economy</span>
           </Link>
           <NavLinks admin={user?.role === "admin"} />
           {accounts.length > 0 && (

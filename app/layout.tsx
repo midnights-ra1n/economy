@@ -1,11 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { GeistSans } from "geist/font/sans";
 import { GeistMono } from "geist/font/mono";
+import { getLocale } from "@/lib/locale";
+import { I18nProvider } from "./i18n-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "Economy",
-  description: "Gestion de budget personnel",
+  description: "Personal budget manager",
   appleWebApp: { capable: true, title: "Economy", statusBarStyle: "default" },
   robots: { index: false, follow: false },
 };
@@ -18,10 +20,13 @@ export const viewport: Viewport = {
   ],
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+export default async function RootLayout({ children }: LayoutProps<"/">) {
+  const locale = await getLocale();
   return (
-    <html lang="fr" className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
-      <body className="flex min-h-full flex-col">{children}</body>
+    <html lang={locale} className={`${GeistSans.variable} ${GeistMono.variable} h-full antialiased`}>
+      <body className="flex min-h-full flex-col">
+        <I18nProvider locale={locale}>{children}</I18nProvider>
+      </body>
     </html>
   );
 }

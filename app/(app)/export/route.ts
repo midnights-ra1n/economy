@@ -3,11 +3,12 @@ import { OWN } from "@/lib/budget";
 import { db } from "@/lib/db";
 import { SCHEMA, transactionsCsv } from "@/lib/backup";
 import { localToday } from "@/lib/forecast";
+import { getLocale } from "@/lib/locale";
 
 /** GET /export?format=json (full backup) | csv (operations, for spreadsheets). */
 export async function GET(request: Request) {
   const user = await currentUser();
-  if (!user) return new Response("Non autorisé", { status: 401 });
+  if (!user) return new Response("Unauthorized", { status: 401 });
   const csv = new URL(request.url).searchParams.get("format") === "csv";
   // Only the caller's own rows; user_id stays out of the file (a backup can be restored into any account).
   const all = (table: keyof typeof SCHEMA) =>
@@ -18,6 +19,7 @@ export async function GET(request: Request) {
           SELECT t.date, a.name AS account, t.label, t.category, t.amount
           FROM transactions t JOIN accounts a ON a.id = t.account_id WHERE a.user_id = ? ORDER BY t.date, t.id
         `).all(user.id) as Parameters<typeof transactionsCsv>[0],
+        await getLocale(),
       )
     : JSON.stringify(
         {

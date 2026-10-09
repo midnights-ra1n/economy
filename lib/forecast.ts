@@ -43,9 +43,10 @@ export function parseCents(input: string): number | null {
 }
 
 const formatters = new Map<string, Intl.NumberFormat>();
-export function fmt(cents: number, currency = "EUR"): string {
-  if (!formatters.has(currency)) formatters.set(currency, new Intl.NumberFormat("fr-FR", { style: "currency", currency }));
-  return formatters.get(currency)!.format(cents / 100);
+export function fmt(cents: number, currency = "EUR", intl = "fr-FR"): string {
+  const id = `${intl}:${currency}`;
+  if (!formatters.has(id)) formatters.set(id, new Intl.NumberFormat(intl, { style: "currency", currency }));
+  return formatters.get(id)!.format(cents / 100);
 }
 
 export type MonthForecast = { month: string; balances: Record<number, number> };

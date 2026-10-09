@@ -30,7 +30,7 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
   old.close();
 
   const db = await openDb(dir, "v0");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 1);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 2);
   assert.deepEqual({ ...db.prepare("SELECT id, username, password_hash, role, currency FROM users").get() },
     { id: 1, username: "moi", password_hash: "scrypt:aa:bb", role: "admin", currency: "USD" });
   for (const t of ["accounts", "credentials", "sessions"]) {
@@ -45,7 +45,7 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
 
 test("a fresh database gets the current schema and a setup code", async () => {
   const db = await openDb(mkdtempSync(path.join(tmpdir(), "economy-")), "fresh");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 1);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 2);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n, 0);
   assert.ok(db.prepare("SELECT 1 FROM settings WHERE key = 'setup_code_hash'").get());
 });

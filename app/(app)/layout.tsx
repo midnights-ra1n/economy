@@ -20,11 +20,11 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     <>
       {/* Floating rounded bar; the transparent strip around it lets clicks through to the page. */}
       <header className="pointer-events-none sticky top-0 z-20 px-3 pt-[calc(env(safe-area-inset-top)+0.75rem)]">
-        <div className="pointer-events-auto mx-auto flex h-14 w-full max-w-[62rem] items-center justify-between gap-3 rounded-2xl bg-ink pr-2 pl-4 text-paper shadow-lg shadow-black/15">
+        <div className="pointer-events-auto mx-auto flex h-14 w-full max-w-[62rem] items-center justify-between gap-3 rounded-2xl bg-bar pr-2 pl-4 text-bar-ink shadow-lg ring-1 shadow-black/20 ring-bar-line">
           <Link href="/" className="flex shrink-0 items-center gap-2 font-semibold tracking-tight">
             <svg viewBox="0 0 512 512" className="size-6" aria-hidden>
-              <rect width="512" height="512" rx="112" fill="var(--paper)" fillOpacity="0.14" />
-              <path d="M96 340c60 0 80-120 140-120s70 70 110 70 50-80 70-120" fill="none" stroke="var(--accent)" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
+              <rect width="512" height="512" rx="112" fill="#fff" fillOpacity="0.14" />
+              <path d="M96 340c60 0 80-120 140-120s70 70 110 70 50-80 70-120" fill="none" stroke="var(--bar-accent)" strokeWidth="40" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
             <span className="desk:max-[40rem]:hidden">Economy</span>
           </Link>

@@ -6,4 +6,6 @@ export async function register() {
   const { VERSION, latestRelease } = await import("./lib/version");
   log(`Version ${VERSION}`);
   void latestRelease();
+  const { startReports } = await import("./lib/reports");
+  startReports(); // automatic statements: now, then every hour
 }

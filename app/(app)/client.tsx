@@ -41,6 +41,7 @@ const links = [
   { href: "/", label: "nav.home" as Key, icon: icon("M3 17l5-5 4 3 8-8M15 7h5v5") },
   { href: "/operations", label: "nav.operations" as Key, icon: icon("M7 4v16M3 8l4-4 4 4M17 20V4M13 16l4 4 4-4") },
   { href: "/previsions", label: "nav.forecast" as Key, icon: icon("M4 5h16v15H4zM4 10h16M9 3v4M15 3v4") },
+  { href: "/releves", label: "nav.statements" as Key, icon: icon("M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h4") },
   { href: "/comptes", label: "nav.accounts" as Key, icon: icon("M3 9l9-5 9 5M5 10v8M10 10v8M14 10v8M19 10v8M3 20h18") },
   { href: "/reglages", label: "nav.settings" as Key, icon: icon("M12 15a3 3 0 100-6 3 3 0 000 6zM4 12h2M18 12h2M12 4v2M12 18v2M6.3 6.3l1.4 1.4M16.3 16.3l1.4 1.4M6.3 17.7l1.4-1.4M16.3 7.7l1.4-1.4") },
 ];
@@ -61,7 +62,7 @@ export function NavLinks({ admin }: { admin: boolean }) {
           <Link
             href={l.href}
             aria-current={isActive(l.href) ? "page" : undefined}
-            className={`block rounded-xl px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${isActive(l.href) ? "bg-paper/15 font-medium text-paper" : "text-paper/65 hover:text-paper"}`}
+            className={`block rounded-xl px-3 py-1.5 text-sm whitespace-nowrap transition-colors ${isActive(l.href) ? "bg-white/10 font-medium text-bar-ink" : "text-bar-muted hover:text-bar-ink"}`}
           >
             {t(l.label)}
           </Link>
@@ -76,14 +77,14 @@ export function TabBar() {
   const isActive = useActive();
   const { t } = useT();
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-line bg-paper/85 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg desk:hidden">
-      <ul className="mx-auto flex max-w-md justify-around px-2">
+    <nav className="fixed inset-x-0 bottom-0 z-20 border-t border-bar-line bg-bar/95 pb-[env(safe-area-inset-bottom)] backdrop-blur-lg desk:hidden">
+      <ul className="mx-auto flex max-w-lg px-1">
         {links.map((l) => (
-          <li key={l.href}>
+          <li key={l.href} className="min-w-0 flex-1">
             <Link
               href={l.href}
               aria-current={isActive(l.href) ? "page" : undefined}
-              className={`flex flex-col items-center gap-0.5 px-3 py-2 text-[11px] transition-colors ${isActive(l.href) ? "text-accent" : "text-muted"}`}
+              className={`flex flex-col items-center gap-0.5 truncate px-0.5 pt-2 pb-1.5 text-[10.5px] transition-colors ${isActive(l.href) ? "text-bar-accent" : "text-bar-muted"}`}
             >
               {l.icon}
               {t(l.label)}
@@ -104,7 +105,7 @@ export function QuickAdd({ children }: { children: ReactNode }) {
     <>
       <button
         onClick={() => ref.current?.showModal()}
-        className="hidden shrink-0 items-center gap-1.5 rounded-xl bg-accent px-3 py-1.5 text-sm font-medium text-paper transition-transform active:scale-95 desk:flex"
+        className="hidden shrink-0 items-center gap-1.5 rounded-xl bg-bar-accent px-3 py-1.5 text-sm font-medium text-bar transition-transform active:scale-95 desk:flex"
       >
         <svg viewBox="0 0 24 24" className="size-4" aria-hidden>{plus}</svg>
         {t("common.add")}
@@ -112,7 +113,7 @@ export function QuickAdd({ children }: { children: ReactNode }) {
       <button
         onClick={() => ref.current?.showModal()}
         aria-label={t("quick.aria")}
-        className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 grid size-14 place-items-center rounded-full bg-accent text-white shadow-lg shadow-accent/30 transition-transform active:scale-90 desk:hidden"
+        className="fixed right-4 bottom-[calc(4.75rem+env(safe-area-inset-bottom))] z-20 grid size-14 place-items-center rounded-full bg-bar-accent text-bar shadow-lg shadow-black/25 ring-4 ring-paper transition-transform active:scale-90 desk:hidden"
       >
         <svg viewBox="0 0 24 24" className="size-6" aria-hidden>{plus}</svg>
       </button>

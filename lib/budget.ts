@@ -52,8 +52,13 @@ export function postDueRecurring(uid: number, today = localToday()) {
   });
 }
 
-/** Deletes all of a user's banking data (accounts cascade to operations and forecasts). Login and passkeys stay. */
-export const wipeBudget = (uid: number) => db.prepare("DELETE FROM accounts WHERE user_id = ?").run(uid);
+/** Deletes all of a user's banking data: accounts (cascading to operations and forecasts) and statements.
+ * Login, passkeys and preferences stay. */
+export const wipeBudget = (uid: number) =>
+  tx(() => {
+    db.prepare("DELETE FROM accounts WHERE user_id = ?").run(uid);
+    db.prepare("DELETE FROM statements WHERE user_id = ?").run(uid);
+  });
 
 /** Display currency of the logged-in user. Amounts are not converted: it is a display unit. */
 export const getCurrency = cache(async () => (await currentUser())?.currency ?? "EUR");

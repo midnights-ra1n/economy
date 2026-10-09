@@ -7,8 +7,17 @@
   }
 }
 
-/* Neutral, cool greys with a single cobalt accent used sparingly (charts, active tab, add button). */
+/* Neutral, cool greys with a single cobalt accent used sparingly (charts, active tab, add button).
+   "bar" is the one dark surface, in both themes: navigation, the dashboard summary, and the header band
+   of the PDF statements and e-mails (lib/pdf.ts, lib/mail.ts use the same values). */
 :root {
+  --bar: #141417;
+  --bar-ink: #f2f2f3;
+  --bar-muted: #a3a3ab;
+  --bar-line: rgb(255 255 255 / 0.08);
+  --bar-accent: #8b9dff;
+  --bar-gain: #4cc785;
+  --bar-loss: #f07a7a;
   --paper: #f6f6f7;
   --surface: #ffffff;
   --ink: #1c1c1f;
@@ -20,6 +29,7 @@
 }
 @media (prefers-color-scheme: dark) {
   :root {
+    --bar: #1c1c21; /* lifted from the page so it still reads as a separate surface */
     --paper: #0f0f11;
     --surface: #18181b;
     --ink: #f2f2f3;
@@ -40,6 +50,13 @@
   --color-accent: var(--accent);
   --color-gain: var(--gain);
   --color-loss: var(--loss);
+  --color-bar: var(--bar);
+  --color-bar-ink: var(--bar-ink);
+  --color-bar-muted: var(--bar-muted);
+  --color-bar-line: var(--bar-line);
+  --color-bar-accent: var(--bar-accent);
+  --color-bar-gain: var(--bar-gain);
+  --color-bar-loss: var(--bar-loss);
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
 }

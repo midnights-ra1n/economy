@@ -3,7 +3,7 @@ import { getAccounts } from "@/lib/budget";
 import type { Account } from "@/lib/forecast";
 import { saveAccount } from "../actions";
 import { getT } from "@/lib/locale";
-import { Card, DeleteButton, Field, button, input } from "../ui";
+import { Card, DeleteButton, Field, PageHeader, button, input } from "../ui";
 
 async function AccountForm({ account }: { account?: Account }) {
   const { t, locale } = await getT();
@@ -40,6 +40,7 @@ export default async function Comptes() {
   const { t } = await getT();
   return (
     <>
+      <PageHeader title={t("nav.accounts")} sub={t("acc.sub")} />
       <Card title={t("acc.new")}>
         <AccountForm />
       </Card>

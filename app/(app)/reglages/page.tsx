@@ -9,7 +9,7 @@ import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
 import { importData, savePreferences, wipeMyData } from "../actions";
 import { ConfirmButton, MessageForm } from "../client";
-import { Card, Field, button, input, listClass } from "../ui";
+import { Card, Field, PageHeader, button, input, listClass } from "../ui";
 
 const ghost = "rounded-xl border border-line px-4 py-2.5 text-center font-medium transition-colors hover:bg-paper";
 
@@ -29,15 +29,11 @@ export default async function Reglages() {
   const { t, rich, intl, locale } = await getT();
   return (
     <>
-      <section className="anim-rise flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">{t("set.title")}</h1>
-          <p className="mt-1 text-muted">
-            {rich(user.role === "admin" ? "set.signedInAsAdmin" : "set.signedInAs", { name: <span className="font-medium text-ink">{user.username}</span> })}
-          </p>
-        </div>
-        {user.role === "admin" && <Link href="/admin" className={ghost}>{t("set.adminLink")}</Link>}
-      </section>
+      <PageHeader
+        title={t("set.title")}
+        sub={rich(user.role === "admin" ? "set.signedInAsAdmin" : "set.signedInAs", { name: <span className="font-medium text-ink">{user.username}</span> })}
+        action={user.role === "admin" && <Link href="/admin" className={ghost}>{t("set.adminLink")}</Link>}
+      />
 
       <Card title={t("set.preferences")}>
         <form action={savePreferences} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
@@ -91,6 +87,7 @@ export default async function Reglages() {
         <div className="grid gap-3 sm:grid-cols-2">
           <a href="/export?format=json" className={ghost} download>{t("set.exportJson")}</a>
           <a href="/export?format=csv" className={ghost} download>{t("set.exportCsv")}</a>
+          <Link href="/releves" className={`${ghost} sm:col-span-2`}>{t("set.statementsLink")}</Link>
         </div>
         <MessageForm action={importData} className="mt-5 space-y-3 border-t border-line pt-5">
           <Field label={t("set.restore")}>

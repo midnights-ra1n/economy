@@ -79,30 +79,30 @@ export default async function Dashboard() {
 
   return (
     <>
-      <section className="space-y-6">
-        <div className="anim-rise space-y-5">
-          <h1 className="max-w-3xl text-[2.1rem] leading-[1.08] font-semibold tracking-tight sm:text-6xl">
-            {rich(endTotal >= 0 ? "dash.heroLeft" : "dash.heroShort", {
-              amount: <Money cents={endTotal} sans className={endTotal < 0 ? "text-loss" : ""} />,
-            }, { month: monthName(month) })}
-          </h1>
-          {/* Current accounts first: that is the money available to spend. */}
-          <ul className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-px overflow-hidden rounded-2xl border border-line bg-line">
-            {accounts.map((a) => (
-              <li key={a.id} className="space-y-1 bg-surface p-4">
-                <p className="flex items-center gap-1.5 text-sm text-muted">
-                  <span className={`size-1.5 rounded-full ${a.kind === "courant" ? "bg-accent" : "bg-muted/50"}`} />
-                  <span className="truncate">{a.name}</span>
-                </p>
-                <p className="text-lg font-medium"><Money cents={a.balance} /></p>
-                <p className="text-xs text-muted">
-                  {t("dash.endOf", { month: monthName(month, "short") })}{" "}
-                  <Money cents={months[0].balances[a.id]} className={months[0].balances[a.id] < a.balance ? "text-loss" : "text-gain"} />
-                </p>
-              </li>
-            ))}
-          </ul>
-        </div>
+      {/* The summary sits on the dark "bar" surface, like the navbar and the header of the PDF statements. */}
+      <section className="anim-rise space-y-6 rounded-3xl bg-bar p-5 text-bar-ink ring-1 ring-bar-line sm:p-8">
+        <p className="text-sm text-bar-muted first-letter:uppercase">{new Date(`${today}T12:00`).toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" })}</p>
+        <h1 className="max-w-3xl text-[2.1rem] leading-[1.08] font-semibold tracking-tight sm:text-6xl">
+          {rich(endTotal >= 0 ? "dash.heroLeft" : "dash.heroShort", {
+            amount: <Money cents={endTotal} sans className={endTotal < 0 ? "text-bar-loss" : "text-bar-accent"} />,
+          }, { month: monthName(month) })}
+        </h1>
+        {/* Current accounts first: that is the money available to spend. */}
+        <ul className="grid grid-cols-[repeat(auto-fit,minmax(10rem,1fr))] gap-px overflow-hidden rounded-2xl bg-bar-line ring-1 ring-bar-line">
+          {accounts.map((a) => (
+            <li key={a.id} className="space-y-1 bg-bar p-4">
+              <p className="flex items-center gap-1.5 text-sm text-bar-muted">
+                <span className={`size-1.5 rounded-full ${a.kind === "courant" ? "bg-bar-accent" : "bg-bar-muted/50"}`} />
+                <span className="truncate">{a.name}</span>
+              </p>
+              <p className="text-lg font-medium"><Money cents={a.balance} /></p>
+              <p className="text-xs text-bar-muted">
+                {t("dash.endOf", { month: monthName(month, "short") })}{" "}
+                <Money cents={months[0].balances[a.id]} className={months[0].balances[a.id] < a.balance ? "text-bar-loss" : "text-bar-gain"} />
+              </p>
+            </li>
+          ))}
+        </ul>
       </section>
 
       <Card title={t("dash.projection")} plain>

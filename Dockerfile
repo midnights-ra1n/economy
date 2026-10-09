@@ -18,6 +18,8 @@ RUN mkdir /data && chown node:node /data && chmod 700 /data
 COPY --from=build --chown=node:node /app/.next/standalone ./
 COPY --from=build --chown=node:node /app/.next/static ./.next/static
 COPY --from=build --chown=node:node /app/public ./public
+# Fonts of the PDF statements (read at runtime, see lib/pdf.ts).
+COPY --from=build --chown=node:node /app/assets ./assets
 USER node
 VOLUME /data
 EXPOSE 3000

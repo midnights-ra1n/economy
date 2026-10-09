@@ -3,9 +3,10 @@ import { requireAdmin } from "@/lib/auth";
 import { db, dbPath, persistent } from "@/lib/db";
 import { getT } from "@/lib/locale";
 import { VERSION, latestRelease, updateCheckEnabled } from "@/lib/version";
+import { mailEnabled, mailHost } from "@/lib/mail";
 import { isNewer } from "@/lib/semver";
 import { ConfirmButton, MessageForm } from "../client";
-import { Card, Field, button, input } from "../ui";
+import { Card, Field, PageHeader, button, input } from "../ui";
 import { createUser, deleteUser, resetApp, resetPassword, revokeSessions, setRole, wipeUser } from "./actions";
 
 type UserRow = {
@@ -61,8 +62,8 @@ export default async function Admin() {
 
   return (
     <>
-      <section className="anim-rise space-y-5">
-        <h1 className="text-4xl font-semibold tracking-tight sm:text-5xl">{t("adm.title")}</h1>
+      <section className="space-y-5">
+        <PageHeader title={t("adm.title")} />
         <ul className="grid grid-cols-2 gap-px overflow-hidden rounded-2xl border border-line bg-line sm:grid-cols-4">
           {stats.map((s) => (
             <li key={s.label} className="space-y-1 bg-surface p-4">
@@ -174,6 +175,13 @@ export default async function Admin() {
           {updateCheckEnabled
             ? rich("adm.updateHow", { cmd: <code className="rounded bg-paper px-1 py-0.5 font-mono text-xs text-ink">docker compose pull &amp;&amp; docker compose up -d</code> })
             : t("adm.updateOff")}
+        </p>
+      </Card>
+
+      <Card title={t("adm.mail")}>
+        <p className="flex items-start gap-2.5 text-sm">
+          <span className={`mt-1.5 size-2 shrink-0 rounded-full ${mailEnabled ? "bg-gain" : "bg-muted/50"}`} aria-hidden />
+          <span className={mailEnabled ? "" : "text-muted"}>{mailEnabled ? t("adm.mailOn", { host: mailHost! }) : t("adm.mailOff")}</span>
         </p>
       </Card>
 

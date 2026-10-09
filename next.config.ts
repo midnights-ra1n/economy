@@ -3,6 +3,8 @@ import type { NextConfig } from "next";
 const nextConfig: NextConfig = {
   // Docker only: standalone's server.js chdirs into .next/standalone, which would move ./data out of the repo.
   output: process.env.STANDALONE ? "standalone" : undefined,
+  // pdfkit reads its own files from disk at runtime: load it with Node's require instead of bundling it.
+  serverExternalPackages: ["pdfkit"],
   turbopack: {
     rules: {
       "*.css": {

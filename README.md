@@ -20,6 +20,12 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 - **End-of-month forecast** and a **6-month projection**, with an alert when a rule is about to be broken
 - A month calendar of scheduled debits (tap a day to see its items) and a spending curve compared with last month
 
+**Statements**
+- **Account statements as PDFs**: opening and closing balances, money in and out, every transaction with its running balance, spending by category
+- Made on demand for a month, a week or any range, or **automatically every week or month**
+- **Sent by e-mail** with the PDF attached, if the server has SMTP set up
+- All statements in one place, ready to download, with optional **automatic cleanup** (after 3, 6, 12 or 24 months)
+
 **Everyday use**
 - Add a transaction in a few taps from anywhere, with the **+** button
 - Installable **PWA** for desktop and mobile, light and dark mode
@@ -121,6 +127,11 @@ The database is created in `./data` (change it with `DATA_DIR`).
 | `PORT`     | `3000`                           | HTTP port.                                                              |
 | `UPDATE_CHECK` | `true`                       | Set to `false` to stop checking GitHub for new releases.                |
 | `SETUP_WINDOW_MINUTES` | `10`                 | How long the first-account screen stays open after a start or a reset.  |
+| `SMTP_HOST`    |                              | SMTP server for e-mailed statements. E-mail is off when unset.          |
+| `SMTP_PORT`    | `587`                        | `587` uses STARTTLS, `465` TLS.                                         |
+| `SMTP_SECURE`  | `true` on port 465           | Force TLS on or off.                                                    |
+| `SMTP_USER`, `SMTP_PASS` |                    | SMTP login, if the server needs one.                                    |
+| `SMTP_FROM`    |                              | Sender, e.g. `Economy <budget@example.com>`. Required for e-mail.       |
 
 ## Putting it online
 
@@ -165,6 +176,32 @@ docker compose pull && docker compose up -d      # or let an image auto-updater 
 
 On Proxmox, pull the new image and recreate the container with the same `/data` mount. To stay on a given version, use a version tag instead of `latest`.
 
+## Statements
+
+**Statements** in the menu lists every statement, to open or download as a PDF, or to send by e-mail.
+
+<p align="center">
+  <img src="docs/screenshot-statements.png" alt="Statements page" width="60%">
+  &nbsp;
+  <img src="docs/screenshot-statement.png" alt="First page of a PDF statement" width="32%">
+</p>
+
+- **New statement**: a month or a week (Monday to Sunday) from any day in it, or any range of up to a year. Making a month or week again replaces it with fresh figures.
+- **Automatic statements**: every week or every month, a statement is made once the period is over, checked every hour. With an e-mail address and the box ticked, it is also e-mailed with the PDF attached; a failed send is retried at the next check.
+- **Automatic cleanup** deletes statements older than the chosen number of months.
+- A statement is a snapshot: editing transactions later does not change it. Erasing your banking data deletes your statements too.
+
+E-mail needs an SMTP server, set with the `SMTP_*` variables (see [Configuration](#configuration)); the admin panel shows whether it is set up. For example, in `docker-compose.yml`:
+
+```yaml
+    environment:
+      SMTP_HOST: smtp.example.com
+      SMTP_PORT: 587
+      SMTP_USER: budget@example.com
+      SMTP_PASS: ${SMTP_PASS}          # from a .env file next to docker-compose.yml, not committed
+      SMTP_FROM: Economy <budget@example.com>
+```
+
 ## Users and administration
 
 - Each user sees only their own accounts, transactions and plans, and their exports contain only their data.
@@ -194,6 +231,7 @@ Strings live in [`lib/i18n.ts`](lib/i18n.ts). To add a language, add a dictionar
 - WebAuthn challenges are stored server-side, single-use, and expire after 5 minutes.
 - Every page and server action checks the session again, and admin actions check the role again. Every query on banking data is filtered by user, and account ids sent by forms are verified.
 - Deleted data is overwritten (`PRAGMA secure_delete`). A full reset also empties the WAL journal and compacts the database.
+- SMTP credentials only come from environment variables: they are never stored in the database.
 - Security headers are set (HSTS, `X-Frame-Options`, `nosniff`, …), and the app asks search engines not to index it.
 
 ## Development
@@ -208,11 +246,15 @@ pnpm typecheck
 Built with Next.js 16 (App Router, server actions), React 19, Tailwind CSS 4, `node:sqlite` and `@simplewebauthn`. Fonts: Geist and Geist Mono.
 
 ```
-app/(app)/     signed-in pages: dashboard, transactions, planning, accounts, settings, admin
+app/(app)/     signed-in pages: dashboard, transactions, planning, statements, accounts, settings, admin
 app/login/     setup, sign-in and passkeys
 lib/db.ts      SQLite connection, schema migrations, first-account window, logs
 lib/auth.ts    sessions, passwords, rate limiting
 lib/budget.ts  per-user budget queries
 lib/forecast.ts  projection logic (pure, tested)
 lib/i18n.ts    French and English strings
+lib/statement.ts  statement periods and figures (pure, tested)
+lib/pdf.ts     PDF statement (pdfkit, Geist fonts from assets/fonts)
+lib/mail.ts    statement e-mail (nodemailer)
+lib/reports.ts storage, scheduler, e-mail and cleanup of statements
 ```

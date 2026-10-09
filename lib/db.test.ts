@@ -30,7 +30,7 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
   old.close();
 
   const db = await openDb(dir, "v0");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 3);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 4);
   assert.deepEqual({ ...db.prepare("SELECT id, username, password_hash, role, currency FROM users").get() },
     { id: 1, username: "moi", password_hash: "scrypt:aa:bb", role: "admin", currency: "USD" });
   for (const t of ["accounts", "credentials", "sessions"]) {
@@ -45,7 +45,7 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
 
 test("a fresh database gets the current schema and opens the account creation window", async () => {
   const db = await openDb(mkdtempSync(path.join(tmpdir(), "economy-")), "fresh");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 3);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 4);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n, 0);
   const { setupMinutesLeft } = (await import(`./db.ts?${"fresh"}`)) as typeof import("./db.ts"); // same instance as openDb
   assert.ok(setupMinutesLeft() > 0 && setupMinutesLeft() <= 10);

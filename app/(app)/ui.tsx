@@ -11,6 +11,19 @@ export const input =
 export const button =
   "rounded-xl bg-ink px-4 py-2.5 font-medium text-paper transition-transform duration-150 hover:opacity-90 active:scale-[0.97]";
 
+/** Title of a page, the same on every page. */
+export function PageHeader({ title, sub, action }: { title: string; sub?: ReactNode; action?: ReactNode }) {
+  return (
+    <header className="anim-rise flex flex-wrap items-end justify-between gap-x-6 gap-y-3">
+      <div className="min-w-0 space-y-1.5">
+        <h1 className="text-3xl font-semibold tracking-tight sm:text-4xl">{title}</h1>
+        {sub && <p className="max-w-prose text-muted">{sub}</p>}
+      </div>
+      {action}
+    </header>
+  );
+}
+
 /** A titled section. `plain` drops the panel for content that should sit on the page itself. */
 export function Card({ title, children, action, plain }: { title?: string; children: ReactNode; action?: ReactNode; plain?: boolean }) {
   return (

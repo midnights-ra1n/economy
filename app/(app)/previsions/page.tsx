@@ -4,7 +4,7 @@ import { getAccounts, getCategories, getPlanned, getRecurring } from "@/lib/budg
 import { localToday } from "@/lib/forecast";
 import { addPlanned, addRecurring, payPlanned } from "../actions";
 import { getT } from "@/lib/locale";
-import { Card, DeleteButton, Empty, EntryForm, Money, Row, listClass } from "../ui";
+import { Card, DeleteButton, Empty, EntryForm, Money, PageHeader, Row, listClass } from "../ui";
 
 export default async function Previsions() {
   const { id: uid } = await requireUser();
@@ -23,6 +23,7 @@ export default async function Previsions() {
 
   return (
     <>
+      <PageHeader title={t("nav.forecast")} sub={t("fc.sub")} />
       <Card title={t("fc.monthly")} action={<span className="text-sm text-muted">{t("fc.monthlyNet")} <Money cents={monthly} signed /></span>}>
         <p className="mb-4 text-sm text-muted">{t("fc.monthlyHelp")}</p>
         <EntryForm action={addRecurring} accounts={accounts} categories={categories} when="day" today={today} />

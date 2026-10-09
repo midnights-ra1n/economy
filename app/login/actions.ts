@@ -12,7 +12,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db, setupMinutesLeft, tx } from "@/lib/db";
 import { isLocale } from "@/lib/i18n";
-import { LOCALE_COOKIE, getT } from "@/lib/locale";
+import { LOCALE_COOKIE, getLocale, getT } from "@/lib/locale";
 import { cookies } from "next/headers";
 import {
   ORIGIN, RP_ID, assertNotLocked, clearFailures, createSession, destroyAllSessions, destroySession,
@@ -32,6 +32,11 @@ async function attempt(fn: () => Promise<FormState | void>): Promise<FormState> 
   }
 }
 
+/** Background e-mails have no browser to ask: keep the language the user signs in with, unless they chose one. */
+async function rememberLocale(uid: number) {
+  db.prepare("UPDATE users SET locale = COALESCE(locale, ?) WHERE id = ?").run(await getLocale(), uid);
+}
+
 /** First run: only possible in the minutes after the server starts (see setupMinutesLeft). */
 export async function setup(_: FormState, form: FormData): Promise<FormState> {
   const state = await attempt(async () => {
@@ -43,6 +48,7 @@ export async function setup(_: FormState, form: FormData): Promise<FormState> {
       if (isSetUp()) throw new Error("err.exists");
       return Number(db.prepare("INSERT INTO users (username, password_hash, role) VALUES (?, ?, 'admin')").run(username, password).lastInsertRowid);
     });
+    await rememberLocale(uid);
     await createSession(uid);
   });
   if (state.error) return state;
@@ -62,6 +68,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
       throw new Error("err.credentials");
     }
     await clearFailures();
+    await rememberLocale(user.id);
     await createSession(user.id);
   });
   if (state.error) return state;
@@ -140,6 +147,7 @@ export async function verifyAuthentication(response: AuthenticationResponseJSON)
   });
   if (!verified) throw new Error("Passkey rejected.");
   db.prepare("UPDATE credentials SET counter = ? WHERE id = ?").run(authenticationInfo.newCounter, cred.id);
+  await rememberLocale(cred.user_id);
   await createSession(cred.user_id);
 }
 

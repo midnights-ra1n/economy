@@ -93,6 +93,22 @@ function migrate(d: DatabaseSync) {
     () => d.exec("ALTER TABLE users ADD COLUMN locale TEXT CHECK (locale IN ('fr','en'))"),
     // v3: the setup code is gone, replaced by a time window after start.
     () => d.exec("DELETE FROM settings WHERE key = 'setup_code_hash'"),
+    // v4: account statements (PDF snapshots) and their per-user schedule, e-mail and retention.
+    () => d.exec(`
+      ALTER TABLE users ADD COLUMN email TEXT;
+      ALTER TABLE users ADD COLUMN report_frequency TEXT NOT NULL DEFAULT 'off' CHECK (report_frequency IN ('off','weekly','monthly'));
+      ALTER TABLE users ADD COLUMN report_email INTEGER NOT NULL DEFAULT 0;
+      ALTER TABLE users ADD COLUMN statement_retention INTEGER; -- months; NULL keeps them all
+      CREATE TABLE statements (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK (kind IN ('week','month','custom')),
+        start TEXT NOT NULL, end TEXT NOT NULL, -- inclusive dates
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), emailed_at TEXT, pdf BLOB NOT NULL
+      );
+      CREATE INDEX statements_user ON statements(user_id, end);
+      -- One automatic statement per period: the scheduler can run again without duplicates.
+      CREATE UNIQUE INDEX statements_auto ON statements(user_id, kind, start) WHERE kind != 'custom';
+    `),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

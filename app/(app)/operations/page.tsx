@@ -3,7 +3,7 @@ import { requireUser } from "@/lib/auth";
 import { getAccounts, getTransactions, postDueRecurring } from "@/lib/budget";
 import { addMonths, localToday, ym } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
-import { Card, DeleteButton, Empty, Money, Row, listClass } from "../ui";
+import { Card, DeleteButton, Empty, Money, PageHeader, Row, listClass } from "../ui";
 
 const arrow = "grid size-9 place-items-center rounded-full border border-line transition-colors hover:bg-surface";
 
@@ -22,6 +22,7 @@ export default async function Operations({ searchParams }: PageProps<"/operation
 
   return (
     <>
+      <PageHeader title={t("nav.operations")} sub={t("ops.sub")} />
       {!accounts.length && (
         <Empty>{rich("common.needAccount", { link: <Link href="/comptes" className="text-ink underline">{t("common.account")}</Link> })}</Empty>
       )}

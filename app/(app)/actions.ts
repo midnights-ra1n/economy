@@ -151,7 +151,8 @@ export async function importData(_: { error?: string; ok?: string }, form: FormD
     if (!(file instanceof File) || !file.size) throw new Error("err.noFile");
     const backup = parseBackup(await file.text());
     tx(() => {
-      wipeBudget(uid); // cascades to transactions, recurring and planned
+      // Not wipeBudget: statements are snapshots of the past and stay.
+      db.prepare("DELETE FROM accounts WHERE user_id = ?").run(uid); // cascades to transactions, recurring and planned
       const accountIds = new Map<unknown, number>();
       const ref = (v: unknown) => {
         if (v === null || v === undefined) return null;

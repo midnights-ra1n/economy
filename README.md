@@ -1,36 +1,74 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Economy
 
-## Getting Started
+Gestion de budget personnel, simple, installable en PWA (mobile et desktop), auto-hébergée.
 
-First, run the development server:
+- **Comptes** courants et épargne, avec une **règle de solde minimum** (ex. « mon livret ne descend pas sous 1 000 € »)
+- **Opérations** : dépenses, revenus, virements entre comptes, catégories
+- **Abonnements et revenus mensuels**, ajoutés automatiquement aux opérations le jour venu
+- **Dépenses prévues** ponctuelles, à valider une fois payées
+- **Prévision** du solde en fin de mois et **projection sur 6 mois**, avec une alerte si une règle va être enfreinte
+- **Import / export** : sauvegarde complète en JSON (restaurable), opérations en CSV pour Excel ou LibreOffice
+- **Devise** au choix (euro par défaut, dollar, livre, franc suisse…)
+- Connexion par **identifiant et mot de passe**, avec **passkeys en option** (Face ID, Touch ID, Windows Hello)
+- Base **SQLite** dans un seul fichier, via le module `node:sqlite` intégré à Node (aucune dépendance native)
+
+Application mono-utilisateur. Les données vivent sur votre serveur : tous vos appareils (PC, téléphone) voient les mêmes chiffres.
+
+## Démarrage avec Docker
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+ORIGIN=https://budget.mondomaine.fr docker compose up -d --build
+docker compose logs economy   # affiche le code d'initialisation
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Ouvrez l'URL, saisissez le **code d'initialisation** affiché dans les logs, puis choisissez votre identifiant et votre mot de passe. Un nouveau code est généré à chaque démarrage tant qu'aucun compte n'existe, et il disparaît dès que le compte est créé : personne d'autre ne peut ensuite s'inscrire. Vous pourrez ajouter des passkeys dans Réglages.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+Les données sont stockées dans le volume `economy-data` (`/data/economy.db`).
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Démarrage sans Docker
 
-## Learn More
+Node.js 24 ou plus récent est requis.
 
-To learn more about Next.js, take a look at the following resources:
+```bash
+pnpm install
+pnpm build
+ORIGIN=http://localhost:3000 pnpm start
+```
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+La base est créée dans `./data` (modifiable avec `DATA_DIR`).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## Configuration
 
-## Deploy on Vercel
+| Variable   | Défaut                  | Rôle                                                              |
+| ---------- | ----------------------- | ----------------------------------------------------------------- |
+| `ORIGIN`   | `http://localhost:3000` | URL publique exacte. Les passkeys sont liées à ce domaine.         |
+| `DATA_DIR` | `./data` (`/data` dans Docker) | Dossier de la base SQLite.                                 |
+| `TZ`       | `Europe/Paris` dans Docker | Fuseau utilisé pour les échéances mensuelles.                   |
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Mise en ligne
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **HTTPS est obligatoire** pour les passkeys et l'installation PWA (seul `localhost` y échappe). Placez l'application derrière un reverse proxy (Caddy, Traefik, nginx…) qui termine le TLS.
+- Le proxy doit transmettre l'en-tête `Host` d'origine : les server actions de Next.js rejettent les requêtes dont l'`Origin` ne correspond pas à l'hôte (protection CSRF).
+- `ORIGIN` doit correspondre exactement à l'URL tapée dans le navigateur. Si vous changez de domaine, les passkeys existantes ne fonctionneront plus.
+- Le proxy doit transmettre `X-Forwarded-For` (ou `X-Real-IP`) : la limite de tentatives de connexion se fait par adresse IP.
+- Sauvegarde : **Réglages → Exporter une sauvegarde**, ou copie de `economy.db` (par exemple avec `sqlite3 economy.db ".backup save.db"`).
+
+## Sécurité
+
+- Aucun secret n'est lisible dans la base : le mot de passe est haché avec **scrypt** (salé), le code d'initialisation et les sessions avec SHA-256.
+- La base n'est jamais servie par le web. Son dossier est en `700` et ses fichiers en `600` : seul l'utilisateur système de l'application peut les lire.
+- Après 5 échecs de connexion, une adresse IP est bloquée 15 minutes.
+- Les sessions sont des jetons aléatoires dans un cookie `HttpOnly`, `SameSite=Lax` et `Secure` en HTTPS. Elles expirent après 30 jours. Changer le mot de passe déconnecte les autres appareils.
+- Les défis WebAuthn sont stockés côté serveur, à usage unique, et expirent après 5 minutes.
+- Chaque page et chaque server action revérifie la session.
+- Les en-têtes de sécurité sont configurés (HSTS, `X-Frame-Options`, `nosniff`…) et l'application demande à ne pas être indexée.
+
+## Développement
+
+```bash
+pnpm dev     # http://localhost:3000
+pnpm test    # tests de la prévision et de l'import/export (node --test)
+pnpm lint
+```
+
+Next.js 16 (App Router, server actions), Tailwind CSS 4, `@simplewebauthn`.

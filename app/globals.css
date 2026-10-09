@@ -1,26 +1,81 @@
 @import "tailwindcss";
 
+/* Banknote palette: pine ink on mint-grey paper, brass accent. */
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --paper: #eef2ec;
+  --surface: #f8faf6;
+  --ink: #16302b;
+  --muted: #5b6f68;
+  --line: #d3ddd5;
+  --brass: #b8912a;
+  --gain: #2f6b4f;
+  --loss: #b23a48;
 }
-
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
 @media (prefers-color-scheme: dark) {
   :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+    --paper: #0f1f1b;
+    --surface: #152a25;
+    --ink: #e6ede6;
+    --muted: #94a79f;
+    --line: #24403a;
+    --brass: #d4ae4c;
+    --gain: #74c39a;
+    --loss: #e57a86;
   }
 }
 
+@theme inline {
+  --color-paper: var(--paper);
+  --color-surface: var(--surface);
+  --color-ink: var(--ink);
+  --color-muted: var(--muted);
+  --color-line: var(--line);
+  --color-brass: var(--brass);
+  --color-gain: var(--gain);
+  --color-loss: var(--loss);
+  --font-sans: var(--font-hanken);
+  --font-display: var(--font-young-serif);
+}
+
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  @apply bg-paper text-ink font-sans;
+  font-variant-numeric: tabular-nums;
+}
+
+:focus-visible {
+  outline: 2px solid var(--brass);
+  outline-offset: 2px;
+}
+
+/* The one orchestrated moment: on the dashboard, the sentence rises, then the forecast curve draws itself. */
+@keyframes rise {
+  from { opacity: 0; transform: translateY(12px); }
+}
+@keyframes reveal {
+  from { clip-path: inset(0 100% 0 0); }
+  to { clip-path: inset(0 0 0 0); }
+}
+@keyframes pop {
+  from { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+}
+@keyframes grow {
+  from { transform: scaleX(0); }
+}
+.anim-rise { animation: rise 0.7s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+/* Clip reveal rather than stroke-dash: dashes break when the SVG is stretched to the page width. */
+.anim-reveal { animation: reveal 1.4s 0.35s cubic-bezier(0.6, 0, 0.2, 1) both; }
+.anim-pop { animation: pop 0.35s cubic-bezier(0.3, 1.6, 0.5, 1) both; }
+.anim-grow { transform-origin: left; animation: grow 0.9s 0.6s cubic-bezier(0.2, 0.8, 0.2, 1) both; }
+
+/* Route changes crossfade (React <ViewTransition> in the app layout). */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation-duration: 180ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) {
+    animation: none !important;
+    transition: none !important;
+  }
 }

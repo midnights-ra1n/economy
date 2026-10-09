@@ -1,0 +1,15 @@
+services:
+  economy:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # Public URL of the app (passkeys are bound to this domain). Must be https outside localhost.
+      ORIGIN: ${ORIGIN:-http://localhost:3000}
+      TZ: ${TZ:-Europe/Paris}
+    volumes:
+      - economy-data:/data
+
+volumes:
+  economy-data:

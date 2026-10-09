@@ -92,7 +92,13 @@ The image is a standard OCI image, and Proxmox VE 9.1 or later can create an LXC
 
    A bind mount from the host is never deleted with the container. Avoid a Proxmox-managed volume, which is destroyed along with the container.
 4. Add the environment variable `ORIGIN=https://budget.example.com` in the container options. `DATA_DIR`, `PORT` and `TZ` are already set by the image.
-5. Start the container. The setup code appears in its console.
+5. Start the container, then read the setup code from the host:
+
+   ```bash
+   cat /srv/economy/economy.log
+   ```
+
+   Proxmox keeps no container logs, and the **Console** tab only shows what the app prints after you open it, in **console** mode (`pct set <id> --cmode console`, then restart). That is why the app also writes its messages to `/data/economy.log`, and repeats the setup code every minute until the first account is created.
 
 To update, create a container from the new image with the same mount: it finds all the data.
 
@@ -140,6 +146,7 @@ The database is the app's only state. It lives in `/data`, outside the image, so
 
 - **Docker Compose**: the named volume `economy-data` survives restarts, updates (`docker compose pull`, `docker compose up -d`) and rebuilds. Only `docker compose down -v` deletes it, so never add `-v`.
 - **Schema updates**: a new version upgrades the existing database in place at startup (the version is tracked in `PRAGMA user_version`), keeping all data. For example, a single-user install became multi-user, and its owner became the administrator.
+- **Logs**: the app's messages (start, version, setup code, warnings) go to the container output and to `/data/economy.log` (rotated at 1 MB).
 - **Check**: every start logs `[economy] Database /data/economy.db: N user(s).`, with a warning if `/data` is not a mounted volume. The admin panel also shows **Storage: Persistent** or **Ephemeral**.
 - **Backups**: **Settings → Export a backup (JSON)** for your own data, or copy the whole database: `sqlite3 /data/economy.db ".backup economy-backup.db"`. Export before a major update.
 

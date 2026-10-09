@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { chmodSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, chmodSync, existsSync, mkdirSync, readFileSync, renameSync, statSync } from "node:fs";
 import { createHash, randomBytes } from "node:crypto";
 import path from "node:path";
 
@@ -54,8 +54,8 @@ function open() {
   for (const f of [file, `${file}-wal`, `${file}-shm`]) if (existsSync(/*turbopackIgnore: true*/ f)) chmodSync(/*turbopackIgnore: true*/ f, 0o600);
   if (process.env.NEXT_PHASE !== "phase-production-build") {
     const { n } = d.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
-    console.log(`[economy] Database ${file}: ${n} user(s).`);
-    if (!persistent()) console.warn(`[economy] WARNING: ${dir} is not a mounted volume. Data will be lost when the container is recreated.`);
+    log(`Database ${file}: ${n} user(s).`);
+    if (!persistent()) log(`WARNING: ${dir} is not a mounted volume. Data will be lost when the container is recreated.`);
     if (!n) issueSetupCode(d);
   }
   return d;
@@ -113,7 +113,34 @@ function migrate(d: DatabaseSync) {
 export function issueSetupCode(d = db) {
   const code = randomBytes(6).toString("hex");
   d.prepare("INSERT OR REPLACE INTO settings (key, value) VALUES ('setup_code_hash', ?)").run(sha256(code));
-  console.log(`\n[economy] No account yet. Setup code: ${code}\n`);
+  log(`No account yet. Setup code: ${code}`);
+  // A console attached after startup (Proxmox, `docker attach`) has no history: repeat it until it is used.
+  const g = globalThis as unknown as { setupReminder?: NodeJS.Timeout };
+  clearInterval(g.setupReminder);
+  g.setupReminder = setInterval(() => {
+    const used = !d.prepare("SELECT 1 FROM settings WHERE key = 'setup_code_hash'").get();
+    if (used) clearInterval(g.setupReminder);
+    else console.log(`[economy] No account yet. Setup code: ${code}`);
+  }, 60e3);
+  g.setupReminder.unref();
+}
+
+/**
+ * Logs to stdout and to DATA_DIR/economy.log (mode 600, rotated at 1 MB), so the setup code and startup
+ * messages can be read from the volume where the platform shows no container logs (Proxmox LXC).
+ */
+export function log(message: string) {
+  const line = `${new Date().toISOString()} [economy] ${message}`;
+  console.log(line);
+  const logFile = path.join(dir, "economy.log");
+  try {
+    if (existsSync(/*turbopackIgnore: true*/ logFile) && statSync(/*turbopackIgnore: true*/ logFile).size > 1024 * 1024) {
+      renameSync(/*turbopackIgnore: true*/ logFile, `${logFile}.1`);
+    }
+    appendFileSync(/*turbopackIgnore: true*/ logFile, `${line}\n`, { mode: 0o600 });
+  } catch {
+    // Read-only or full disk: stdout still has it.
+  }
 }
 
 /** True when the data dir is its own mount (Docker volume, Proxmox mount point), so it outlives the container.

@@ -2,8 +2,8 @@
 // and starts the first update check so the admin sees its result without waiting.
 export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
-  await import("./lib/db");
+  const { log } = await import("./lib/db");
   const { VERSION, latestRelease } = await import("./lib/version");
-  console.log(`[economy] Version ${VERSION}`);
+  log(`Version ${VERSION}`);
   void latestRelease();
 }

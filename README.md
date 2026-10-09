@@ -4,8 +4,6 @@
 
 Track your accounts, subscriptions and spending, plan one-off expenses, and see your balance six months ahead, with a warning before a savings account drops below the floor you set. It installs as an app on your phone and computer (PWA), and the data lives on your own server.
 
-[Français](README.fr.md)
-
 <p align="center">
   <img src="docs/screenshot-desktop.png" alt="Dashboard on desktop" width="68%">
   &nbsp;
@@ -38,7 +36,7 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 ## Quick start (Docker Compose)
 
 ```bash
-git clone https://github.com/<you>/economy.git && cd economy
+git clone https://github.com/midnights-ra1n/economy.git && cd economy
 ORIGIN=https://budget.example.com docker compose up -d --build
 docker compose logs economy        # shows the setup code
 ```

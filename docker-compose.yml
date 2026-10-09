@@ -1,6 +1,8 @@
 services:
   economy:
-    build: .
+    # Published by .github/workflows/release.yml on every push to `stable`. Pin a version (e.g. :0.1.3) to stay on it.
+    # To build from source instead, add `build: .` and run `docker compose up -d --build`.
+    image: ghcr.io/midnights-ra1n/economy:latest
     restart: unless-stopped
     ports:
       - "3000:3000"

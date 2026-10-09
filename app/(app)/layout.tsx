@@ -3,6 +3,8 @@ import { ViewTransition } from "react";
 import { currentUser } from "@/lib/auth";
 import { getAccounts, getCategories } from "@/lib/budget";
 import { localToday } from "@/lib/forecast";
+import { getT } from "@/lib/locale";
+import { VERSION, availableUpdate } from "@/lib/version";
 import { addTransaction } from "./actions";
 import { NavLinks, QuickAdd, TabBar } from "./client";
 import { EntryForm } from "./ui";
@@ -11,6 +13,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // Pages redirect anonymous visitors; the layout only avoids putting account names in that response.
   const user = await currentUser();
   const accounts = user ? getAccounts(user.id) : [];
+  // Only admins can act on it (by updating the image), so only they see it.
+  const update = user?.role === "admin" ? await availableUpdate() : null;
+  const { t } = await getT();
   return (
     <>
       {/* Floating rounded bar; the transparent strip around it lets clicks through to the page. */}
@@ -31,6 +36,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           )}
         </div>
       </header>
+      {update && (
+        <p role="status" className="mx-auto mt-3 flex w-[calc(100%-1.5rem)] max-w-[62rem] flex-wrap items-center gap-x-3 gap-y-1 rounded-2xl border border-accent/25 bg-accent/[0.07] px-4 py-2.5 text-sm">
+          <span className="size-1.5 shrink-0 rounded-full bg-accent" aria-hidden />
+          <span className="min-w-0 flex-1">{t("upd.banner", { latest: update.version, current: VERSION })}</span>
+          <a href={update.url} target="_blank" rel="noreferrer" className="font-medium text-accent hover:underline">{t("upd.notes")}</a>
+        </p>
+      )}
       {/* Navigations are transitions, so pages crossfade where the browser supports view transitions. */}
       <ViewTransition>
         <main className="mx-auto w-full max-w-5xl flex-1 space-y-8 px-4 pt-8 pb-36 desk:pb-12">{children}</main>

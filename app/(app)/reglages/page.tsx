@@ -3,6 +3,7 @@ import { CURRENCIES } from "@/lib/backup";
 import { db } from "@/lib/db";
 import { LOCALES, LOCALE_NAMES } from "@/lib/i18n";
 import { getT } from "@/lib/locale";
+import { VERSION } from "@/lib/version";
 import Link from "next/link";
 import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
@@ -116,6 +117,7 @@ export default async function Reglages() {
       <form action={logout}>
         <button className={`${ghost} w-full`}>{t("set.logout")}</button>
       </form>
+      <p className="text-center font-mono text-xs text-muted">{t("set.version", { v: VERSION })}</p>
     </>
   );
 }

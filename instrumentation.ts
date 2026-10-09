@@ -1,4 +1,9 @@
-// Opens the database at server start, so the first-run setup code shows in the logs right away.
+// Opens the database at server start, so the first-run setup code shows in the logs right away,
+// and starts the first update check so the admin sees its result without waiting.
 export async function register() {
-  if (process.env.NEXT_RUNTIME === "nodejs") await import("./lib/db");
+  if (process.env.NEXT_RUNTIME !== "nodejs") return;
+  await import("./lib/db");
+  const { VERSION, latestRelease } = await import("./lib/version");
+  console.log(`[economy] Version ${VERSION}`);
+  void latestRelease();
 }

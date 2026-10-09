@@ -2,6 +2,8 @@ import { existsSync, statSync } from "node:fs";
 import { requireAdmin } from "@/lib/auth";
 import { db, dbPath, persistent } from "@/lib/db";
 import { getT } from "@/lib/locale";
+import { VERSION, latestRelease, updateCheckEnabled } from "@/lib/version";
+import { isNewer } from "@/lib/semver";
 import { ConfirmButton, MessageForm } from "../client";
 import { Card, Field, button, input } from "../ui";
 import { createUser, deleteUser, resetApp, resetPassword, revokeSessions, setRole, wipeUser } from "./actions";
@@ -46,6 +48,8 @@ export default async function Admin() {
   const kept = persistent();
   const { user_version } = db.prepare("PRAGMA user_version").get() as { user_version: number };
   const { t, tn, rich, intl } = await getT();
+  const latest = await latestRelease({ wait: true });
+  const outdated = !!latest && isNewer(latest.version, VERSION);
   const day = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleDateString(intl, { day: "numeric", month: "short", year: "numeric" });
 
   const stats = [
@@ -146,6 +150,31 @@ export default async function Admin() {
             );
           })}
         </ul>
+      </Card>
+
+      <Card title={t("adm.version")}>
+        <div className="flex flex-wrap items-end gap-x-10 gap-y-3">
+          <div>
+            <p className="text-sm text-muted">{t("adm.versionInstalled")}</p>
+            <p className="font-mono text-lg">{VERSION}</p>
+          </div>
+          {latest && (
+            <div>
+              <p className="text-sm text-muted">{t("adm.versionLatest")}</p>
+              <a href={latest.url} target="_blank" rel="noreferrer" className="font-mono text-lg hover:underline">{latest.version}</a>
+            </div>
+          )}
+          {updateCheckEnabled && (
+            <p className={`rounded-lg px-2 py-1 text-sm font-medium ${outdated ? "bg-accent/10 text-accent" : latest ? "bg-gain/10 text-gain" : "bg-paper text-muted"}`}>
+              {t(outdated ? "adm.updateAvailable" : latest ? "adm.upToDate" : "adm.updateUnknown")}
+            </p>
+          )}
+        </div>
+        <p className="mt-4 text-sm text-muted">
+          {updateCheckEnabled
+            ? rich("adm.updateHow", { cmd: <code className="rounded bg-paper px-1 py-0.5 font-mono text-xs text-ink">docker compose pull &amp;&amp; docker compose up -d</code> })
+            : t("adm.updateOff")}
+        </p>
       </Card>
 
       <Card title={t("adm.newUser")}>

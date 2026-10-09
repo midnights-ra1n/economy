@@ -1,5 +1,6 @@
 # Every push to `stable` (a direct push or a merged dev → stable pull request) tests the app, then publishes
-# a new image to ghcr.io with an automatically incremented version, and a GitHub release for that version.
+# a new multi-architecture image to ghcr.io (amd64 for PCs and Proxmox, arm64 for Raspberry Pi 3/4/5)
+# with an automatically incremented version, and a GitHub release for that version.
 # Pull requests to `stable` only run the tests and a test build of the image.
 name: Release
 
@@ -15,13 +16,21 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
+env:
+  IMAGE: ghcr.io/${{ github.repository }}
+  PUBLISH: ${{ github.event_name != 'pull_request' }}
+
 jobs:
   test:
     runs-on: ubuntu-latest
     permissions:
       contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # the tags give the last released version
       - uses: actions/setup-node@v7
         with:
           node-version: 24
@@ -29,64 +38,108 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck # generates the route types (PageProps…) first: they are not committed
       - run: pnpm test
-
-  image:
-    needs: test
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write # tag + GitHub release
-      packages: write # push to ghcr.io
-    env:
-      PUBLISH: ${{ github.event_name != 'pull_request' }}
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # the tags give the last released version
-
       - name: Next version
         id: version
         run: echo "version=$(node scripts/next-version.mts)" >> "$GITHUB_OUTPUT"
 
+  # Each architecture builds on a native runner (no emulation), pushed by digest; `publish` joins them.
+  image:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - platform: linux/amd64
+            runner: ubuntu-latest
+          - platform: linux/arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v7
       - uses: docker/setup-buildx-action@v4
-
       - uses: docker/login-action@v4
         if: env.PUBLISH == 'true'
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
       - id: meta
         uses: docker/metadata-action@v6
         with:
-          images: ghcr.io/${{ github.repository }}
-          tags: |
-            type=raw,value=latest
-            type=raw,value=${{ steps.version.outputs.version }}
-            type=sha,format=short
+          images: ${{ env.IMAGE }}
           labels: |
             org.opencontainers.image.title=Economy
-            org.opencontainers.image.version=${{ steps.version.outputs.version }}
-
-      - uses: docker/build-push-action@v7
+            org.opencontainers.image.version=${{ needs.test.outputs.version }}
+      - id: build
+        uses: docker/build-push-action@v7
         with:
           context: .
-          platforms: linux/amd64
-          push: ${{ env.PUBLISH == 'true' }}
-          tags: ${{ steps.meta.outputs.tags }}
+          platforms: ${{ matrix.platform }}
           labels: ${{ steps.meta.outputs.labels }}
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=${{ env.PUBLISH }}
           build-args: |
-            APP_VERSION=${{ steps.version.outputs.version }}
+            APP_VERSION=${{ needs.test.outputs.version }}
             APP_REPOSITORY=${{ github.repository }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+      - name: Export digest
+        if: env.PUBLISH == 'true'
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          PLATFORM: ${{ matrix.platform }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/digests"
+          touch "$RUNNER_TEMP/digests/${DIGEST#sha256:}"
+          echo "PAIR=${PLATFORM//\//-}" >> "$GITHUB_ENV"
+      - uses: actions/upload-artifact@v7
+        if: env.PUBLISH == 'true'
+        with:
+          name: digest-${{ env.PAIR }}
+          path: ${{ runner.temp }}/digests/*
+          retention-days: 1
+
+  publish:
+    needs: [test, image]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # tag + GitHub release
+      packages: write # push the multi-architecture tags
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/digests
+          pattern: digest-*
+          merge-multiple: true
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.IMAGE }}
+          tags: |
+            type=raw,value=latest
+            type=raw,value=${{ needs.test.outputs.version }}
+            type=sha,format=short
+      - name: Multi-architecture tags
+        working-directory: ${{ runner.temp }}/digests
+        run: |
+          docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
+            $(printf "$IMAGE@sha256:%s " *)
+          docker buildx imagetools inspect "$IMAGE:${{ needs.test.outputs.version }}"
 
       # Last: the tag only exists once the image is published, so the version always matches an image.
       - name: GitHub release
-        if: env.PUBLISH == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          VERSION: ${{ steps.version.outputs.version }}
+          GH_REPO: ${{ github.repository }}
+          VERSION: ${{ needs.test.outputs.version }}
         run: |
           gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes \
-            --notes "Image: \`ghcr.io/${GITHUB_REPOSITORY,,}:$VERSION\`"
+            --notes "Image: \`$IMAGE:$VERSION\` (linux/amd64, linux/arm64)"

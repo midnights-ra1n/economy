@@ -35,7 +35,7 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 
 ## Quick start (Docker Compose)
 
-A ready-made image is published on `ghcr.io/midnights-ra1n/economy` (x86-64). You only need the compose file:
+A ready-made image is published on `ghcr.io/midnights-ra1n/economy` for **x86-64** (PCs, servers, Proxmox) and **arm64** (Raspberry Pi, Apple Silicon Macs). Docker picks the right one on its own. You only need the compose file:
 
 ```bash
 mkdir economy && cd economy
@@ -62,6 +62,12 @@ docker run -d --name economy -p 3000:3000 \
 ```
 
 Always pass the same named volume (`-v economy-data:/data`). Without it, every new container starts from an empty database.
+
+### Raspberry Pi
+
+The same commands work on a Raspberry Pi 3, 4 or 5 running a **64-bit** system: Raspberry Pi OS 64-bit, the default on recent images, or Ubuntu. Check with `uname -m`, which must print `aarch64`. 32-bit systems are not supported, because Node.js 24 no longer ships for 32-bit ARM.
+
+Install Docker with `curl -fsSL https://get.docker.com | sh`, then follow the quick start. Prefer an SSD to the SD card for `/data` if you can: SQLite writes often, and SD cards wear out.
 
 ### Proxmox LXC container (OCI image)
 

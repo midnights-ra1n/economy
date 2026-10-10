@@ -173,6 +173,25 @@ export default async function Dashboard() {
       </Card>
 
       <Card title={t("dash.scheduled")} action={<Link href="/previsions" className="text-sm text-muted hover:text-ink">{t("dash.manage")}</Link>}>
+        {/* Per account: balance now, what is still to come this month (subscriptions, planned), what will be left. */}
+        <ul className="mb-4 space-y-2">
+          {accounts.filter((a) => a.kind === "courant" || months[0].balances[a.id] !== a.balance).map((a) => {
+            const end = months[0].balances[a.id];
+            return (
+              <li key={a.id} className="rounded-xl bg-paper p-3">
+                <p className="mb-1.5 truncate text-sm font-medium">{a.name}</p>
+                <dl className="grid grid-cols-3 gap-2 text-sm">
+                  <div><dt className="text-xs text-muted">{t("dash.now")}</dt><dd><Money cents={a.balance} /></dd></div>
+                  <div><dt className="text-xs text-muted">{t("dash.upcoming")}</dt><dd><Money cents={end - a.balance} signed /></dd></div>
+                  <div className="text-right">
+                    <dt className="text-xs text-muted">{t("dash.left", { month: monthName(month, "short") })}</dt>
+                    <dd><Money cents={end} className={`font-semibold ${end < 0 ? "text-loss" : ""}`} /></dd>
+                  </div>
+                </dl>
+              </li>
+            );
+          })}
+        </ul>
         <MonthCalendar month={month} today={today} items={calendar} />
       </Card>
 

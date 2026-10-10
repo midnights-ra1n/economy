@@ -18,8 +18,12 @@ export function periodOf(kind: "week" | "month", date: string): Period {
   return { kind, start: monday, end: addDays(monday, 6) };
 }
 
-/** The last period fully over on `today`: what an automatic statement covers. */
-export function lastCompleted(frequency: Exclude<Frequency, "off">, today: string): Period {
+/**
+ * The last period fully over on `today`: what an automatic statement covers.
+ * A month is only due from its sending `day` of the next month (null before), e.g. after deferred card debits.
+ */
+export function lastCompleted(frequency: Exclude<Frequency, "off">, today: string, day = 1): Period | null {
+  if (frequency === "monthly" && Number(today.slice(8)) < day) return null;
   return frequency === "monthly" ? periodOf("month", `${addMonths(ym(today), -1)}-01`) : periodOf("week", addDays(today, -7));
 }
 

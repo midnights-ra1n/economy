@@ -2,9 +2,9 @@ import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccounts, getCategories, getPlanned, getRecurring } from "@/lib/budget";
 import { localToday } from "@/lib/forecast";
-import { addPlanned, addRecurring, payPlanned } from "../actions";
+import { addPlanned, addRecurring, payPlanned, updatePlanned, updateRecurring } from "../actions";
 import { getT } from "@/lib/locale";
-import { Card, DeleteButton, Empty, EntryForm, Money, PageHeader, Row, listClass } from "../ui";
+import { Card, DeleteButton, EditEntry, Empty, EntryForm, Money, PageHeader, Row, entryValues, listClass } from "../ui";
 
 export default async function Previsions() {
   const { id: uid } = await requireUser();
@@ -37,6 +37,7 @@ export default async function Previsions() {
                 sub={r.to_account_id ? t("fc.fromTo", { from: names[r.account_id], to: names[r.to_account_id] }) : [names[r.account_id], r.category].filter(Boolean).join(", ")}
               >
                 <Money cents={r.amount} signed />
+                <EditEntry action={updateRecurring} accounts={accounts} categories={categories} when="day" today={today} values={entryValues(r)} />
                 <DeleteButton table="recurring" id={r.id} />
               </Row>
             ))}
@@ -63,6 +64,7 @@ export default async function Previsions() {
                     <svg viewBox="0 0 16 16" className="size-4" aria-hidden><path d="M3 8.5l3.2 3L13 4.5" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" /></svg>
                   </button>
                 </form>
+                <EditEntry action={updatePlanned} accounts={accounts} categories={categories} when="date" today={today} transfer={false} values={entryValues(p)} />
                 <DeleteButton table="planned" id={p.id} />
               </Row>
             ))}

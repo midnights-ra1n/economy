@@ -3,7 +3,7 @@ import { getCurrency } from "@/lib/budget";
 import { getT } from "@/lib/locale";
 import { fmt } from "@/lib/forecast";
 import type { Account } from "@/lib/forecast";
-import { ConfirmButton } from "./client";
+import { ConfirmButton, EditButton } from "./client";
 import { deleteRow } from "./actions";
 
 export const input =
@@ -101,10 +101,10 @@ const segment =
 
 /**
  * Form shared by quick add, subscriptions and planned expenses: type, amount and label first,
- * the rest has sensible defaults (first account, today).
+ * the rest has sensible defaults (first account, today). `values` pre-fills it to edit an existing row.
  */
 export async function EntryForm({
-  action, accounts, categories, when, today, transfer = true, submit,
+  action, accounts, categories, when, today, transfer = true, submit, values: v,
 }: {
   action: (f: FormData) => Promise<void>;
   accounts: Account[];
@@ -113,6 +113,7 @@ export async function EntryForm({
   today: string;
   transfer?: boolean;
   submit?: string;
+  values?: EntryValues;
 }) {
   const { t } = await getT();
   const options = accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>);
@@ -123,44 +124,63 @@ export async function EntryForm({
   return (
     // `group` + :has() swaps category for the destination account on transfers, without client JS.
     <form action={action} className="group space-y-3">
+      {v && <input type="hidden" name="id" value={v.id} />}
       <div role="radiogroup" aria-label={t("entry.type")} className="flex gap-1 rounded-xl bg-paper p-1">
         {types.map(([value, label]) => (
           <label key={value} className={segment}>
-            <input type="radio" name="type" value={value} defaultChecked={value === "depense"} className="sr-only" />
+            <input type="radio" name="type" value={value} defaultChecked={value === (v?.type ?? "depense")} className="sr-only" />
             {label}
           </label>
         ))}
       </div>
       <div className="flex items-baseline gap-2 border-b border-line focus-within:border-accent">
         <input
-          name="amount" required inputMode="decimal" pattern="\d+([.,]\d{1,2})?" placeholder="0,00" aria-label={t("entry.amount")}
+          name="amount" required inputMode="decimal" defaultValue={v && (Math.abs(v.amount) / 100).toFixed(2)} pattern="\d+([.,]\d{1,2})?" placeholder="0,00" aria-label={t("entry.amount")}
           className="w-full bg-transparent py-2 font-mono text-4xl tracking-tight placeholder:text-muted/40 focus:outline-none"
         />
         <span className="font-mono text-xl text-muted">{await getCurrency()}</span>
       </div>
-      <input name="label" required maxLength={80} placeholder={t("entry.labelPlaceholder")} aria-label={t("entry.label")} className={input} />
+      <input name="label" required maxLength={80} defaultValue={v?.label} placeholder={t("entry.labelPlaceholder")} aria-label={t("entry.label")} className={input} />
       <div className="grid grid-cols-2 gap-3">
         <Field label={t("entry.account")}>
-          <select name="account_id" className={input}>{options}</select>
+          <select name="account_id" defaultValue={v?.account_id} className={input}>{options}</select>
         </Field>
         <Field label={t("entry.toAccount")} className="hidden group-has-[input[value=virement]:checked]:block">
-          <select name="to_account_id" className={input} defaultValue={accounts[1]?.id}>{options}</select>
+          <select name="to_account_id" className={input} defaultValue={v?.to_account_id ?? accounts[1]?.id}>{options}</select>
         </Field>
         <Field label={t("entry.category")} className="group-has-[input[value=virement]:checked]:hidden">
-          <input name="category" list="categories" maxLength={40} placeholder={t("entry.optional")} className={input} />
+          <input name="category" list="categories" maxLength={40} defaultValue={v?.category ?? undefined} placeholder={t("entry.optional")} className={input} />
           <datalist id="categories">{categories.map((c) => <option key={c} value={c} />)}</datalist>
         </Field>
         {when === "date" ? (
           <Field label={t("entry.date")}>
-            <input name="date" type="date" required defaultValue={today} className={input} />
+            <input name="date" type="date" required defaultValue={v?.date ?? today} className={input} />
           </Field>
         ) : (
           <Field label={t("entry.everyMonth")}>
-            <input name="day" type="number" min={1} max={31} required defaultValue={Number(today.slice(8))} className={input} />
+            <input name="day" type="number" min={1} max={31} required defaultValue={v?.day ?? Number(today.slice(8))} className={input} />
           </Field>
         )}
       </div>
       <button className={`${button} w-full py-3`}>{submit ?? t("common.add")}</button>
     </form>
   );
+}
+
+export type EntryValues = {
+  id: number; type: "depense" | "revenu" | "virement"; amount: number; label: string;
+  account_id: number; to_account_id?: number | null; category: string | null; date?: string; day?: number;
+};
+
+/** Values of a stored row (signed amount, "Virement" category) as the entry form takes them. */
+export const entryValues = (row: Omit<EntryValues, "type">): EntryValues => ({
+  ...row,
+  type: row.to_account_id ? "virement" : row.amount < 0 ? "depense" : "revenu",
+  category: row.to_account_id ? null : row.category,
+});
+
+/** Edit button of a list row: the entry form, pre-filled, in a dialog. */
+export async function EditEntry(props: Parameters<typeof EntryForm>[0] & { values: EntryValues }) {
+  const { t } = await getT();
+  return <EditButton><EntryForm {...props} submit={t("common.save")} /></EditButton>;
 }

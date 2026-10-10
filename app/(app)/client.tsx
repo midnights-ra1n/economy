@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useActionState, useRef, type ComponentProps, type ReactNode } from "react";
+import { useActionState, useRef, type ComponentProps, type ReactNode, type RefObject } from "react";
 import type { Key } from "@/lib/i18n";
 import { useT } from "../i18n-provider";
 
@@ -117,21 +117,44 @@ export function QuickAdd({ children }: { children: ReactNode }) {
       >
         <svg viewBox="0 0 24 24" className="size-6" aria-hidden>{plus}</svg>
       </button>
-      <dialog
-        ref={ref}
-        // Close once the form is submitted; the server action keeps running and refreshes the page.
-        onSubmit={() => setTimeout(() => ref.current?.close(), 50)}
-        onClick={(e) => { if (e.target === ref.current) ref.current?.close(); }}
-        className="sheet m-0 mt-auto w-full max-w-none rounded-t-3xl bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-ink sm:m-auto sm:max-w-md sm:rounded-3xl"
-      >
-        <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold tracking-tight">{t("quick.title")}</h2>
-          <button onClick={() => ref.current?.close()} aria-label={t("common.close")} className="grid size-8 place-items-center rounded-full text-muted hover:bg-paper">
-            <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
-          </button>
-        </div>
-        {children}
-      </dialog>
+      <Sheet sheet={ref} title={t("quick.title")}>{children}</Sheet>
     </>
+  );
+}
+
+/** Pencil button of a list row, opening its pre-filled form in a dialog. */
+export function EditButton({ children }: { children: ReactNode }) {
+  const ref = useRef<HTMLDialogElement>(null);
+  const { t } = useT();
+  return (
+    <>
+      <button onClick={() => ref.current?.showModal()} aria-label={t("common.edit")} title={t("common.edit")}
+        className="grid size-8 place-items-center rounded-full text-muted transition-colors hover:bg-paper hover:text-ink">
+        <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden><path d="M10.5 2.5l3 3L6 13H3v-3z" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinejoin="round" /></svg>
+      </button>
+      <Sheet sheet={ref} title={t("common.edit")}>{children}</Sheet>
+    </>
+  );
+}
+
+/** Bottom sheet on mobile, centered dialog on desktop. */
+function Sheet({ sheet: ref, title, children }: { sheet: RefObject<HTMLDialogElement | null>; title: string; children: ReactNode }) {
+  const { t } = useT();
+  return (
+    <dialog
+      ref={ref}
+      // Close once the form is submitted; the server action keeps running and refreshes the page.
+      onSubmit={() => setTimeout(() => ref.current?.close(), 50)}
+      onClick={(e) => { if (e.target === ref.current) ref.current?.close(); }}
+      className="sheet m-0 mt-auto w-full max-w-none rounded-t-3xl bg-surface p-5 pb-[max(1.25rem,env(safe-area-inset-bottom))] text-ink sm:m-auto sm:max-w-md sm:rounded-3xl"
+    >
+      <div className="mb-4 flex items-center justify-between">
+        <h2 className="text-lg font-semibold tracking-tight">{title}</h2>
+        <button onClick={() => ref.current?.close()} aria-label={t("common.close")} className="grid size-8 place-items-center rounded-full text-muted hover:bg-paper">
+          <svg viewBox="0 0 16 16" className="size-3.5" aria-hidden><path d="M3 3l10 10M13 3L3 13" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" /></svg>
+        </button>
+      </div>
+      {children}
+    </dialog>
   );
 }

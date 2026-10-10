@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { requireUser, verifyPassword, assertNotLocked, recordFailure } from "@/lib/auth";
-import { OWN, assertOwnAccounts, wipeBudget } from "@/lib/budget";
+import { OWN, assertOwnAccounts, transferTwin, wipeBudget, type Transaction } from "@/lib/budget";
 import { db, tx } from "@/lib/db";
 import { CURRENCIES, SCHEMA, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
@@ -59,14 +59,33 @@ async function done() {
   revalidatePath("/", "layout");
 }
 
+function insertTransaction(e: ReturnType<typeof entry>, d: string) {
+  const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)");
+  insert.run(e.account_id, e.label, e.amount, d, e.category);
+  if (e.to_account_id) insert.run(e.to_account_id, e.label, -e.amount, d, e.category);
+}
+
 export async function addTransaction(form: FormData) {
   const { id: uid } = await requireUser();
   const e = entry(uid, form);
   const d = date(form);
-  const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)");
+  tx(() => insertTransaction(e, d));
+  await done();
+}
+
+/** Any field can change, even the type: the operation (both sides of a transfer) is replaced. */
+export async function updateTransaction(form: FormData) {
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
+  const d = date(form);
+  const old = db.prepare(`SELECT * FROM transactions WHERE id = ? AND ${OWN}`).get(id(form), uid) as Transaction | undefined;
+  if (!old) throw new Error("Unknown operation");
+  const del = db.prepare("DELETE FROM transactions WHERE id = ?");
   tx(() => {
-    insert.run(e.account_id, e.label, e.amount, d, e.category);
-    if (e.to_account_id) insert.run(e.to_account_id, e.label, -e.amount, d, e.category);
+    const twin = transferTwin(uid, old);
+    del.run(old.id);
+    if (twin) del.run(twin.id);
+    insertTransaction(e, d);
   });
   await done();
 }
@@ -89,6 +108,25 @@ export async function addPlanned(form: FormData) {
   const e = entry(uid, form);
   db.prepare("INSERT INTO planned (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)")
     .run(e.account_id, e.label, e.amount, date(form), e.category);
+  await done();
+}
+
+// Already posted operations stay as they are; the new values apply from the next posting.
+export async function updateRecurring(form: FormData) {
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
+  const day = id(form, "day");
+  if (day > 31) throw new Error("Invalid day");
+  db.prepare(`UPDATE recurring SET account_id = ?, to_account_id = ?, label = ?, amount = ?, day = ?, category = ? WHERE id = ? AND ${OWN}`)
+    .run(e.account_id, e.to_account_id, e.label, e.amount, day, e.category, id(form), uid);
+  await done();
+}
+
+export async function updatePlanned(form: FormData) {
+  const { id: uid } = await requireUser();
+  const e = entry(uid, form);
+  db.prepare(`UPDATE planned SET account_id = ?, label = ?, amount = ?, date = ?, category = ? WHERE id = ? AND ${OWN}`)
+    .run(e.account_id, e.label, e.amount, date(form), e.category, id(form), uid);
   await done();
 }
 

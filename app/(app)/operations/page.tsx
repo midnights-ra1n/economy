@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
-import { getAccounts, getTransactions, postDueRecurring } from "@/lib/budget";
+import { getAccounts, getCategories, getTransactions, postDueRecurring, transferTwin, type Transaction } from "@/lib/budget";
 import { addMonths, localToday, ym } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
-import { Card, DeleteButton, Empty, Money, PageHeader, Row, listClass } from "../ui";
+import { updateTransaction } from "../actions";
+import { Card, DeleteButton, EditEntry, Empty, Money, PageHeader, Row, entryValues, listClass } from "../ui";
 
 const arrow = "grid size-9 place-items-center rounded-full border border-line transition-colors hover:bg-surface";
 
@@ -16,6 +17,14 @@ export default async function Operations({ searchParams }: PageProps<"/operation
   const accounts = getAccounts(uid);
   const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
   const txs = getTransactions(uid, month);
+  const categories = getCategories(uid);
+  // A transfer is edited from its outgoing side, whichever of its two operations the button is on.
+  const values = (tx: Transaction) => {
+    const twin = transferTwin(uid, tx);
+    if (!twin) return entryValues(tx);
+    const [from, to] = tx.amount < 0 ? [tx, twin] : [twin, tx];
+    return entryValues({ ...from, id: tx.id, to_account_id: to.account_id });
+  };
   const { t, rich, intl } = await getT();
   const label = new Date(`${month}-01T12:00`).toLocaleDateString(intl, { month: "long", year: "numeric" });
   const short = (d: string) => new Date(`${d}T12:00`).toLocaleDateString(intl, { day: "2-digit", month: "2-digit" });
@@ -41,6 +50,7 @@ export default async function Operations({ searchParams }: PageProps<"/operation
             {txs.map((tx) => (
               <Row key={tx.id} lead={short(tx.date)} title={tx.label} sub={[names[tx.account_id], tx.category === "Virement" ? t("entry.transfer") : tx.category].filter(Boolean).join(", ")}>
                 <Money cents={tx.amount} signed />
+                <EditEntry action={updateTransaction} accounts={accounts} categories={categories} when="date" today={today} values={values(tx)} />
                 <DeleteButton table="transactions" id={tx.id} />
               </Row>
             ))}

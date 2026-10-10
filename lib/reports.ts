@@ -9,12 +9,12 @@ import { lastCompleted, periodOf, statementFigures, type Frequency, type Period 
 
 type Owner = {
   id: number; username: string; currency: string; locale: Locale | null; email: string | null;
-  report_frequency: Frequency; report_email: number; statement_retention: number | null;
+  report_frequency: Frequency; report_day: number; report_email: number; statement_retention: number | null;
 };
 export type StatementRow = { id: number; kind: Period["kind"]; start: string; end: string; created_at: string; emailed_at: string | null; size: number };
 
 const owner = (uid: number) =>
-  db.prepare("SELECT id, username, currency, locale, email, report_frequency, report_email, statement_retention FROM users WHERE id = ?").get(uid) as Owner;
+  db.prepare("SELECT id, username, currency, locale, email, report_frequency, report_day, report_email, statement_retention FROM users WHERE id = ?").get(uid) as Owner;
 
 export const getReportSettings = owner;
 
@@ -79,7 +79,7 @@ export function cleanupStatements(uid?: number) {
 }
 
 /**
- * One pass of the scheduler: each user with automatic statements gets the last finished week or month,
+ * One pass of the scheduler: each user with automatic statements gets the last finished week or month (from its sending day),
  * e-mailed once if they asked for it (a failed send is retried on the next pass), then old ones are cleaned up.
  */
 export async function runReports() {
@@ -87,7 +87,8 @@ export async function runReports() {
   for (const { id } of users) {
     const u = owner(id);
     try {
-      const period = lastCompleted(u.report_frequency as "weekly" | "monthly", localToday());
+      const period = lastCompleted(u.report_frequency as "weekly" | "monthly", localToday(), u.report_day);
+      if (!period) continue;
       let s = db.prepare("SELECT id, emailed_at FROM statements WHERE user_id = ? AND kind = ? AND start = ?").get(id, period.kind, period.start) as
         | { id: number; emailed_at: string | null }
         | undefined;

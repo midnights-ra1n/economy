@@ -23,6 +23,13 @@ export const getPlanned = (uid: number) => db.prepare(`SELECT * FROM planned WHE
 export const getTransactions = (uid: number, month: string) =>
   db.prepare(`SELECT * FROM transactions WHERE ${OWN} AND date LIKE ? ORDER BY date DESC, id DESC`).all(uid, `${month}-%`) as Transaction[];
 
+/** The other side of a transfer, stored as two operations: same label and date, opposite amount, another account. */
+export const transferTwin = (uid: number, t: Transaction) =>
+  t.category !== "Virement" ? undefined : db.prepare(`
+    SELECT * FROM transactions WHERE ${OWN} AND category = 'Virement' AND label = ? AND date = ? AND amount = ? AND account_id != ?
+    ORDER BY abs(id - ?) LIMIT 1
+  `).get(uid, t.label, t.date, -t.amount, t.account_id, t.id) as Transaction | undefined;
+
 export const getCategories = (uid: number) =>
   (db.prepare(`
     SELECT category FROM transactions WHERE category IS NOT NULL AND ${OWN}

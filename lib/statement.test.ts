@@ -13,6 +13,10 @@ test("automatic statements cover the last period that is over", () => {
   assert.deepEqual(lastCompleted("monthly", "2026-01-01"), { kind: "month", start: "2025-12-01", end: "2025-12-31" });
   assert.deepEqual(lastCompleted("weekly", "2026-10-12"), { kind: "week", start: "2026-10-05", end: "2026-10-11" });
   assert.deepEqual(lastCompleted("weekly", "2026-10-11"), { kind: "week", start: "2026-09-28", end: "2026-10-04" });
+  // Sent on the 10th: September is not due on October 9, then due from the 10th on.
+  assert.equal(lastCompleted("monthly", "2026-10-09", 10), null);
+  assert.deepEqual(lastCompleted("monthly", "2026-10-10", 10), { kind: "month", start: "2026-09-01", end: "2026-09-30" });
+  assert.deepEqual(lastCompleted("monthly", "2026-10-31", 10), { kind: "month", start: "2026-09-01", end: "2026-09-30" });
 });
 
 test("figures: opening and closing balances, income and spending without transfers", () => {

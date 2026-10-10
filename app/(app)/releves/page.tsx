@@ -109,10 +109,16 @@ export default async function Releves() {
         <div className="lg:col-start-2">
           <Card title={t("rel.auto")}>
             <p className="mb-4 text-sm text-muted">{t("rel.autoHelp")}</p>
-            <MessageForm action={saveReportSettings} className="space-y-3">
+            {/* `group` + :has() shows the sending day for monthly statements only, without client JS. */}
+            <MessageForm action={saveReportSettings} className="group space-y-3">
               <Field label={t("rel.frequency")}>
                 <select name="frequency" defaultValue={settings.report_frequency} className={input}>
                   {(["off", "weekly", "monthly"] as const).map((f) => <option key={f} value={f}>{t(`rel.freq.${f}`)}</option>)}
+                </select>
+              </Field>
+              <Field label={t("rel.day")} className="hidden group-has-[option[value=monthly]:checked]:block">
+                <select name="day" defaultValue={settings.report_day} className={input}>
+                  {Array.from({ length: 28 }, (_, i) => <option key={i} value={i + 1}>{t("rel.dayOf", { day: i + 1 })}</option>)}
                 </select>
               </Field>
               <label className={`flex items-start gap-2.5 text-sm ${canMail ? "" : "opacity-50"}`}>

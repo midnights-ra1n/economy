@@ -50,8 +50,10 @@ export async function saveReportSettings(_: State, form: FormData): Promise<Stat
     if (!["off", "weekly", "monthly"].includes(frequency)) throw new Error("Invalid frequency");
     const retention = Number(field(form, "retention")) || null;
     if (retention !== null && !RETENTIONS.includes(retention)) throw new Error("Invalid retention");
-    db.prepare("UPDATE users SET report_frequency = ?, report_email = ?, statement_retention = ? WHERE id = ?")
-      .run(frequency, form.get("report_email") ? 1 : 0, retention, id);
+    const day = Number(field(form, "day") || 1);
+    if (!Number.isInteger(day) || day < 1 || day > 28) throw new Error("Invalid day");
+    db.prepare("UPDATE users SET report_frequency = ?, report_day = ?, report_email = ?, statement_retention = ? WHERE id = ?")
+      .run(frequency, day, form.get("report_email") ? 1 : 0, retention, id);
     cleanupStatements(id);
     revalidatePath("/releves");
     return { ok: t("rel.saved") };

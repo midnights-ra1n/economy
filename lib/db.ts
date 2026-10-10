@@ -109,6 +109,8 @@ function migrate(d: DatabaseSync) {
       -- One automatic statement per period: the scheduler can run again without duplicates.
       CREATE UNIQUE INDEX statements_auto ON statements(user_id, kind, start) WHERE kind != 'custom';
     `),
+    // v5: day of the month the monthly statement is made and e-mailed (28 at most: every month has it).
+    () => d.exec("ALTER TABLE users ADD COLUMN report_day INTEGER NOT NULL DEFAULT 1 CHECK (report_day BETWEEN 1 AND 28)"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

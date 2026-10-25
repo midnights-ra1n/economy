@@ -1,0 +1,17 @@
+#!/bin/sh
+set -e
+if [ "$1" = configure ] && ! getent passwd economy >/dev/null; then
+  useradd --system --user-group --home-dir /var/lib/economy --no-create-home --shell /usr/sbin/nologin economy
+fi
+# $2 is the previously configured version: empty on a first install.
+if [ "$1" = configure ] && [ -d /run/systemd/system ]; then
+  systemctl daemon-reload
+  systemctl enable economy.service economy-update.path >/dev/null 2>&1
+  systemctl start economy-update.path
+  # Restart, not start: an upgrade must run the new version. The database is upgraded in place at startup.
+  systemctl restart economy.service
+  if [ -z "$2" ]; then
+    echo "Economy is running on port 3000. Create the administrator account within 10 minutes."
+    echo "Set your public URL (ORIGIN) in /etc/economy/economy.env, then: sudo systemctl restart economy"
+  fi
+fi

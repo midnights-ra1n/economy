@@ -103,6 +103,31 @@ The image is a standard OCI image, and Proxmox VE 9.1 or later can create an LXC
 
 To update, create a container from the new image with the same mount: it finds all the data.
 
+### Debian / Ubuntu package (.deb, no Docker)
+
+Every release also ships a `.deb` for **amd64** and **arm64** (Raspberry Pi OS 64-bit included). It bundles its own Node.js, so nothing else is needed: Debian 11+, Ubuntu 22.04+, with systemd.
+
+```bash
+curl -fLo /tmp/economy.deb https://github.com/midnights-ra1n/economy/releases/latest/download/economy_$(dpkg --print-architecture).deb
+sudo apt install /tmp/economy.deb
+```
+
+The package installs a `economy` systemd service (enabled and started, port 3000) running as its own `economy` system user. Then:
+
+1. set your public URL in `/etc/economy/economy.env` (`ORIGIN=https://budget.example.com`, plus any [variable](#configuration));
+2. `sudo systemctl restart economy`, which also reopens the 10-minute account creation window.
+
+| What        | Where                                                        |
+| ----------- | ------------------------------------------------------------ |
+| App         | `/usr/lib/economy`                                           |
+| Settings    | `/etc/economy/economy.env`, kept across upgrades             |
+| Data        | `/var/lib/economy` (database, `economy.log`)                 |
+| Logs        | `journalctl -u economy`                                      |
+
+**Updating**: when a new release is out, the admin panel shows an **Install version …** button. It downloads that release's package from GitHub, installs it and restarts the app; the page reloads on its own once it is back. The database is upgraded in place and `/etc/economy/economy.env` is left untouched. Installing by hand with the two commands above does the same.
+
+The app itself runs unprivileged and cannot install anything: the button only drops a request file in `/var/lib/economy`, which a root systemd unit (`economy-update.path` → `economy-update.service`) watches. That unit only ever installs this repository's latest `economy` package, and only if it is newer. Its log: `journalctl -u economy-update`. `apt remove economy` stops the service; even `apt purge economy` keeps `/var/lib/economy`, which you delete yourself.
+
 ### From source
 
 To build the image yourself, add `build: .` under the `economy` service of `docker-compose.yml` and run `docker compose up -d --build` from a clone of the repository.
@@ -122,7 +147,7 @@ The database is created in `./data` (change it with `DATA_DIR`).
 | Variable   | Default                          | Purpose                                                                 |
 | ---------- | -------------------------------- | ----------------------------------------------------------------------- |
 | `ORIGIN`   | `http://localhost:3000`          | Exact public URL, no trailing slash. Passkeys are bound to this domain. |
-| `DATA_DIR` | `./data` (`/data` in Docker)     | Folder of the SQLite database.                                          |
+| `DATA_DIR` | `./data` (`/data` in Docker, `/var/lib/economy` with the .deb) | Folder of the SQLite database.                                          |
 | `TZ`       | `Europe/Paris` in Docker         | Time zone used for monthly due dates.                                   |
 | `PORT`     | `3000`                           | HTTP port.                                                              |
 | `UPDATE_CHECK` | `true`                       | Set to `false` to stop checking GitHub for new releases.                |
@@ -159,17 +184,18 @@ Every push to the `stable` branch, whether a direct push or a merged `dev` → `
 1. lint, type check and unit tests;
 2. the next version is computed: the last release's patch number + 1 (`0.1.3` → `0.1.4`). To start a new minor or major version, set it in `package.json` (for example `0.2.0`) and the following releases count up from there;
 3. the image is built and published as `ghcr.io/midnights-ra1n/economy:latest`, `:<version>` and `:sha-<commit>`;
-4. a GitHub release `v<version>` is created, with notes generated from the commits.
+4. the `.deb` packages are built for amd64 and arm64;
+5. a GitHub release `v<version>` is created, with notes generated from the commits and the packages attached (`economy_<version>_<arch>.deb`, and `economy_<arch>.deb` so that `releases/latest/download/` always points to the newest).
 
 Pull requests to `stable` run the tests and a test build, without publishing anything.
 
-The app shows its version in **Settings** and in the admin panel. Every 6 hours it checks the latest GitHub release; when a newer one exists, administrators see a banner with a link to its notes. There is no update button: updates come with the image.
+The app shows its version in **Settings** and in the admin panel. Every 6 hours it checks the latest GitHub release; when a newer one exists, administrators see a banner with a link to its notes. With the `.deb`, administrators install it from the admin panel in one click; with Docker, updates come with the image.
 
 ```bash
 docker compose pull && docker compose up -d      # or let an image auto-updater do it
 ```
 
-On Proxmox, pull the new image and recreate the container with the same `/data` mount. To stay on a given version, use a version tag instead of `latest`.
+With the `.deb`, use the button in the admin panel ([details](#debian--ubuntu-package-deb-no-docker)). On Proxmox, pull the new image and recreate the container with the same `/data` mount. To stay on a given version, use a version tag instead of `latest`.
 
 ## Statements
 

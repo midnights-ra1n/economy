@@ -2,12 +2,13 @@ import { existsSync, statSync } from "node:fs";
 import { requireAdmin } from "@/lib/auth";
 import { db, dbPath, getSetting, persistent } from "@/lib/db";
 import { getT } from "@/lib/locale";
-import { VERSION, latestRelease, updateCheckEnabled } from "@/lib/version";
+import { VERSION, isDeb, latestRelease, updateCheckEnabled, updateCommand } from "@/lib/version";
+import { updateState } from "@/lib/update";
 import { smtpConfig } from "@/lib/mail";
 import { isNewer } from "@/lib/semver";
-import { ConfirmButton, MessageForm } from "../client";
+import { AutoRefresh, ConfirmButton, MessageForm } from "../client";
 import { Card, Field, PageHeader, button, input } from "../ui";
-import { createUser, deleteUser, resetApp, resetPassword, revokeSessions, saveSmtp, setRole, testSmtp, wipeUser } from "./actions";
+import { createUser, deleteUser, installUpdate, resetApp, resetPassword, revokeSessions, saveSmtp, setRole, testSmtp, wipeUser } from "./actions";
 
 type UserRow = {
   id: number; username: string; role: "admin" | "user"; created_at: string; last_login: string | null;
@@ -54,6 +55,7 @@ export default async function Admin() {
   const savedPass = !!getSetting("smtp_pass");
   const { email: myEmail } = db.prepare("SELECT email FROM users WHERE id = ?").get(me.id) as { email: string | null };
   const outdated = !!latest && isNewer(latest.version, VERSION);
+  const updating = isDeb ? updateState() : null;
   const day = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleDateString(intl, { day: "numeric", month: "short", year: "numeric" });
 
   const stats = [
@@ -174,10 +176,31 @@ export default async function Admin() {
             </p>
           )}
         </div>
+        {updating === "running" ? (
+          <p role="status" className="mt-4 text-sm font-medium text-accent">
+            {t("adm.updateRunning")}
+            <AutoRefresh />
+          </p>
+        ) : (
+          isDeb && outdated && (
+            <MessageForm action={installUpdate} className="mt-4 grid justify-items-start gap-2">
+              <ConfirmButton message={t("adm.updateConfirm", { version: latest.version })} className={button}>
+                {t("adm.updateInstall", { version: latest.version })}
+              </ConfirmButton>
+            </MessageForm>
+          )
+        )}
+        {updating === "error" && (
+          <p className="mt-4 text-sm text-loss">
+            {rich("adm.updateFailed", { cmd: <code className="rounded bg-paper px-1 py-0.5 font-mono text-xs break-all text-ink">{updateCommand}</code> })}
+          </p>
+        )}
         <p className="mt-4 text-sm text-muted">
-          {updateCheckEnabled
-            ? rich("adm.updateHow", { cmd: <code className="rounded bg-paper px-1 py-0.5 font-mono text-xs text-ink">docker compose pull &amp;&amp; docker compose up -d</code> })
-            : t("adm.updateOff")}
+          {!updateCheckEnabled
+            ? t("adm.updateOff")
+            : isDeb
+              ? t("adm.updateHowDeb")
+              : rich("adm.updateHow", { cmd: <code className="rounded bg-paper px-1 py-0.5 font-mono text-xs break-all text-ink">{updateCommand}</code> })}
         </p>
       </Card>
 

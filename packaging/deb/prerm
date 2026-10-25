@@ -1,0 +1,6 @@
+#!/bin/sh
+set -e
+# Only on removal: an upgrade restarts the service from postinst, without a gap where it is stopped and failing.
+if [ "$1" = remove ] && [ -d /run/systemd/system ]; then
+  systemctl disable --now economy.service economy-update.path >/dev/null 2>&1 || true
+fi

@@ -1,0 +1,9 @@
+[Unit]
+Description=Watch for update requests from Economy's admin panel
+
+[Path]
+# Written by the app (lib/update.ts); the app itself runs unprivileged and cannot install anything.
+PathExists=/var/lib/economy/update-request
+
+[Install]
+WantedBy=multi-user.target

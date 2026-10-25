@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useActionState, useRef, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { usePathname, useRouter } from "next/navigation";
+import { useActionState, useEffect, useRef, type ComponentProps, type ReactNode, type RefObject } from "react";
 import type { Key } from "@/lib/i18n";
 import { useT } from "../i18n-provider";
 
@@ -29,6 +29,16 @@ export function MessageForm({
       )}
     </form>
   );
+}
+
+/** Re-renders the page every few seconds while it is mounted, skipping the moments the server is down (restarting). */
+export function AutoRefresh() {
+  const router = useRouter();
+  useEffect(() => {
+    const id = setInterval(() => fetch(location.href, { method: "HEAD", cache: "no-store" }).then((r) => r.ok && router.refresh(), () => {}), 5000);
+    return () => clearInterval(id);
+  }, [router]);
+  return null;
 }
 
 const icon = (d: string) => (

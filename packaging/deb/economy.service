@@ -1,0 +1,25 @@
+[Unit]
+Description=Economy, personal budget
+Documentation=https://github.com/@REPOSITORY@
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# System user created by postinst. No DynamicUser, Protect*= or seccomp options (RestrictNamespaces…):
+# they need mount namespaces or capabilities that unprivileged LXC containers (Proxmox) may not allow.
+User=economy
+Group=economy
+StateDirectory=economy
+StateDirectoryMode=0700
+WorkingDirectory=/usr/lib/economy
+Environment=NODE_ENV=production NEXT_TELEMETRY_DISABLED=1 DATA_DIR=/var/lib/economy PORT=3000 HOSTNAME=0.0.0.0
+Environment=APP_VERSION=@VERSION@ APP_REPOSITORY=@REPOSITORY@ APP_PACKAGE=deb
+# After the defaults above, so it overrides them. Kept across upgrades (conffile).
+EnvironmentFile=/etc/economy/economy.env
+ExecStart=/usr/lib/economy/bin/node /usr/lib/economy/server.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

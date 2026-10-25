@@ -43,10 +43,17 @@ export async function latestRelease({ wait = false } = {}): Promise<Release | nu
   return state.latest;
 }
 
-/** The newer release when there is one; updates are applied by pulling the new image, not from the app. */
+/** The newer release when there is one; installed from the admin panel with the .deb (lib/update.ts), by pulling the new image with Docker. */
 export async function availableUpdate(opts?: { wait?: boolean }): Promise<Release | null> {
   const latest = await latestRelease(opts);
   return latest && isNewer(latest.version, VERSION) ? latest : null;
 }
 
 export const updateCheckEnabled = ENABLED;
+
+/** Installed from the .deb (set by its systemd unit) rather than the Docker image. */
+export const isDeb = process.env.APP_PACKAGE === "deb";
+/** Shell command that installs the latest release, for the way this copy was installed. */
+export const updateCommand = isDeb
+  ? `curl -fLo /tmp/economy.deb https://github.com/${REPOSITORY}/releases/latest/download/economy_${process.arch === "x64" ? "amd64" : process.arch}.deb && sudo apt install /tmp/economy.deb`
+  : "docker compose pull && docker compose up -d";

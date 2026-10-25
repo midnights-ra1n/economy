@@ -1,0 +1,7 @@
+[Unit]
+Description=Install the latest Economy release
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/economy/update.sh
+TimeoutStartSec=15min

@@ -1,7 +1,7 @@
 # Every push to `stable` (a direct push or a merged dev → stable pull request) tests the app, then publishes
 # a new multi-architecture image to ghcr.io (amd64 for PCs and Proxmox, arm64 for Raspberry Pi 3/4/5)
-# with an automatically incremented version, and a GitHub release for that version.
-# Pull requests to `stable` only run the tests and a test build of the image.
+# with an automatically incremented version, and a GitHub release for that version with the .deb packages.
+# Pull requests to `stable` only run the tests and a test build of the image and packages.
 name: Release
 
 on:
@@ -100,8 +100,38 @@ jobs:
           path: ${{ runner.temp }}/digests/*
           retention-days: 1
 
+  # Debian/Ubuntu packages, one per architecture, built natively (the bundled Node.js is the runner's).
+  deb:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: corepack enable && pnpm install --frozen-lockfile
+      - run: pnpm build
+        env:
+          STANDALONE: 1
+          NEXT_TELEMETRY_DISABLED: 1
+      - run: scripts/build-deb.sh "${{ needs.test.outputs.version }}" "${{ github.repository }}"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: deb-${{ matrix.arch }}
+          path: economy_*.deb
+          retention-days: 7
+
   publish:
-    needs: [test, image]
+    needs: [test, image, deb]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     permissions:
@@ -112,6 +142,11 @@ jobs:
         with:
           path: ${{ runner.temp }}/digests
           pattern: digest-*
+          merge-multiple: true
+      - uses: actions/download-artifact@v8
+        with:
+          path: ${{ runner.temp }}/debs
+          pattern: deb-*
           merge-multiple: true
       - uses: docker/setup-buildx-action@v4
       - uses: docker/login-action@v4
@@ -140,6 +175,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           VERSION: ${{ needs.test.outputs.version }}
+        working-directory: ${{ runner.temp }}/debs
         run: |
+          # Also under a fixed name, so releases/latest/download/economy_<arch>.deb always gives the newest one.
+          for arch in amd64 arm64; do cp "economy_${VERSION}_$arch.deb" "economy_$arch.deb"; done
           gh release create "v$VERSION" --target "$GITHUB_SHA" --title "v$VERSION" --generate-notes \
-            --notes "Image: \`$IMAGE:$VERSION\` (linux/amd64, linux/arm64)"
+            --notes "Image: \`$IMAGE:$VERSION\` (linux/amd64, linux/arm64). Debian/Ubuntu: \`economy_${VERSION}_<arch>.deb\`." \
+            *.deb

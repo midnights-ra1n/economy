@@ -11,6 +11,7 @@ import { getT } from "@/lib/locale";
 import { isEmail, throttle } from "@/lib/mail";
 import { sendTestEmail } from "@/lib/reports";
 import { seal } from "@/lib/secret";
+import { requestUpdate } from "@/lib/update";
 
 type State = { error?: string; ok?: string };
 
@@ -156,4 +157,13 @@ export async function testSmtp(_: State, form: FormData): Promise<State> {
   } catch (e) {
     return { error: te(e) };
   }
+}
+
+/** Hands the install of the latest release to the .deb's root updater (see lib/update.ts). */
+export async function installUpdate(): Promise<State> {
+  await requireAdmin();
+  return attempt((t) => {
+    requestUpdate();
+    return t("ok.updateStarted");
+  });
 }

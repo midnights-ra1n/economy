@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useActionState, useEffect, useRef, type ComponentProps, type ReactNode, type RefObject } from "react";
+import { useActionState, useEffect, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from "react";
 import type { Key } from "@/lib/i18n";
 import { useT } from "../i18n-provider";
+import { deletePushSubscription, savePushSubscription, sendTestPush } from "./actions";
 
 export function ConfirmButton({ message, ...props }: ComponentProps<"button"> & { message: string }) {
   return <button {...props} onClick={(e) => { if (!confirm(message)) e.preventDefault(); }} />;
@@ -166,5 +167,63 @@ function Sheet({ sheet: ref, title, children }: { sheet: RefObject<HTMLDialogEle
       </div>
       {children}
     </dialog>
+  );
+}
+
+const base64url = (buf: ArrayBuffer | null) => buf && btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+
+/** Turns push notifications on or off for this device (registers the service worker on first use). */
+export function PushToggle({ publicKey }: { publicKey: string }) {
+  const { t } = useT();
+  const [state, setState] = useState<"loading" | "unsupported" | "denied" | "off" | "on">("loading");
+  const [result, setResult] = useState<State>({});
+  useEffect(() => {
+    (async () => {
+      if (!("serviceWorker" in navigator && "PushManager" in window)) return setState("unsupported");
+      const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
+      let sub = await reg.pushManager.getSubscription();
+      // Made with keys the server no longer has: useless, start over.
+      if (sub && base64url(sub.options.applicationServerKey) !== publicKey) sub = await sub.unsubscribe().then(() => null);
+      if (sub) await savePushSubscription(sub.toJSON()); // keeps the server in step with this browser
+      setState(sub ? "on" : Notification.permission === "denied" ? "denied" : "off");
+    })().catch(() => setState("unsupported"));
+  }, [publicKey]);
+
+  async function enable() {
+    setResult({});
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: publicKey });
+      await savePushSubscription(sub.toJSON());
+      setState("on");
+    } catch {
+      setState(Notification.permission === "denied" ? "denied" : "off");
+    }
+  }
+  async function disable() {
+    setResult({});
+    const sub = await (await navigator.serviceWorker.ready).pushManager.getSubscription();
+    if (sub) await Promise.all([sub.unsubscribe(), deletePushSubscription(sub.endpoint)]);
+    setState("off");
+  }
+
+  const ghost = "rounded-xl border border-line px-4 py-2.5 text-center font-medium transition-colors hover:bg-paper";
+  if (state === "loading") return null;
+  if (state === "unsupported" || state === "denied") return <p className="text-sm text-muted">{t(state === "denied" ? "set.pushDenied" : "set.pushUnsupported")}</p>;
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
+        <p className="flex-1 text-sm">{t(state === "on" ? "set.pushOn" : "set.pushOff")}</p>
+        {state === "on" ? (
+          <>
+            <button type="button" onClick={async () => setResult(await sendTestPush())} className={ghost}>{t("set.pushTest")}</button>
+            <button type="button" onClick={disable} className={ghost}>{t("set.pushDisable")}</button>
+          </>
+        ) : (
+          <button type="button" onClick={enable} className="rounded-xl bg-ink px-4 py-2.5 font-medium text-paper">{t("set.pushEnable")}</button>
+        )}
+      </div>
+      {(result.error || result.ok) && <p role="status" className={`text-sm ${result.error ? "text-loss" : "text-gain"}`}>{result.error ?? result.ok}</p>}
+    </div>
   );
 }

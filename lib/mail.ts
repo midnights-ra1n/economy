@@ -99,13 +99,17 @@ export function statementMail(doc: StatementDoc, { t, intl }: Pick<T, "t" | "int
 
 export type ReminderItem = { label: string; amount: number; due: string };
 
+/** "jeudi 5 novembre (demain)". */
+export function dueWhen(due: string, today: string, { t, tn, intl }: Pick<T, "t" | "tn" | "intl">) {
+  const days = Math.round((Date.parse(due) - Date.parse(today)) / 864e5);
+  const date = new Date(`${due}T12:00`).toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" });
+  return `${date} (${days ? tn("dash.dueIn", days) : t("dash.dueToday")})`;
+}
+
 /** Reminder e-mail: the payments coming up, same dark header as the statements. */
-export function reminderMail(user: string, currency: string, items: ReminderItem[], { t, tn, intl }: Pick<T, "t" | "tn" | "intl">, today: string, link: string) {
-  const when = (due: string) => {
-    const days = Math.round((Date.parse(due) - Date.parse(today)) / 864e5);
-    const date = new Date(`${due}T12:00`).toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" });
-    return `${date} (${days ? tn("dash.dueIn", days) : t("dash.dueToday")})`;
-  };
+export function reminderMail(user: string, currency: string, items: ReminderItem[], tr: Pick<T, "t" | "tn" | "intl">, today: string, link: string) {
+  const { t, intl } = tr;
+  const when = (due: string) => dueWhen(due, today, tr);
   const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f6f6f7;">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f7;padding:32px 12px;"><tr><td align="center">
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e6e6ea;border-radius:16px;overflow:hidden;">

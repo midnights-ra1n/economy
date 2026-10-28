@@ -18,7 +18,8 @@
     "nodemailer": "10.0.16",
     "pdfkit": "0.20.2",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "web-push": "3.6.7"
   },
   "devDependencies": {
     "@tailwindcss/turbopack": "^4",
@@ -27,6 +28,7 @@
     "@types/pdfkit": "0.17.6",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "3.6.4",
     "eslint": "^9",
     "eslint-config-next": "16.4.0",
     "tailwindcss": "^4",

@@ -9,7 +9,8 @@ import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
 import { importData, saveEmail, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
 import { mailEnabled } from "@/lib/mail";
-import { ConfirmButton, MessageForm } from "../client";
+import { ConfirmButton, MessageForm, PushToggle } from "../client";
+import { vapidPublicKey } from "@/lib/push";
 import { Card, Field, PageHeader, button, input, listClass } from "../ui";
 
 const ghost = "rounded-xl border border-line px-4 py-2.5 text-center font-medium transition-colors hover:bg-paper";
@@ -66,6 +67,11 @@ export default async function Reglages() {
           <p className="flex-1 text-sm text-muted">{mailEnabled() ? t("set.emailTestHelp") : t("rel.mailOff")}</p>
           <button disabled={!mailEnabled() || !email} className={`${ghost} disabled:opacity-40`}>{t("set.emailTest")}</button>
         </MessageForm>
+      </Card>
+
+      <Card title={t("set.push")}>
+        <p className="mb-3 text-sm text-muted">{t("set.pushHelp")}</p>
+        <PushToggle publicKey={vapidPublicKey()} />
       </Card>
 
       <Card title={t("set.password")}>

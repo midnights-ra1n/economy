@@ -120,6 +120,14 @@ function migrate(d: DatabaseSync) {
         PRIMARY KEY (recurring_id, due, days)
       );
     `),
+    // v7: devices that receive push notifications (one browser subscription each).
+    () => d.exec(`
+      CREATE TABLE push_subscriptions (
+        endpoint TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        p256dh TEXT NOT NULL, auth TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT (datetime('now'))
+      );
+      CREATE INDEX push_user ON push_subscriptions(user_id);
+    `),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

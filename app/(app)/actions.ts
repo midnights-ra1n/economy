@@ -11,6 +11,7 @@ import { isLocale } from "@/lib/i18n";
 import { LOCALE_COOKIE, getT } from "@/lib/locale";
 import { isEmail, throttle } from "@/lib/mail";
 import { sendTestEmail } from "@/lib/reports";
+import { PUSH_SERVICE, sendPush } from "@/lib/push";
 
 // Every action re-checks the session: server actions are public endpoints.
 // Invalid input throws: the forms' HTML validation already blocks honest mistakes, so these messages
@@ -281,6 +282,38 @@ export async function sendMyTestEmail() {
     throttle(`user-${user.id}`);
     await sendTestEmail(email, user, locale);
     return { ok: t("ok.testSent", { email }) };
+  } catch (e) {
+    return { error: te(e) };
+  }
+}
+
+/** Registers this device for push notifications: the browser's PushSubscription, as JSON. */
+export async function savePushSubscription(sub: { endpoint?: unknown; keys?: { p256dh?: unknown; auth?: unknown } }) {
+  const { id: uid } = await requireUser();
+  const key = (v: unknown) => typeof v === "string" && v.length <= 200 && /^[\w-]+=*$/.test(v);
+  const { endpoint, keys } = sub ?? {};
+  if (typeof endpoint !== "string" || endpoint.length > 1000 || !PUSH_SERVICE.test(endpoint)) throw new Error("Invalid push endpoint");
+  if (!key(keys?.p256dh) || !key(keys?.auth)) throw new Error("Invalid push keys");
+  // A browser shared by two users notifies the last one who turned it on.
+  db.prepare(`
+    INSERT INTO push_subscriptions (endpoint, user_id, p256dh, auth) VALUES (?, ?, ?, ?)
+    ON CONFLICT (endpoint) DO UPDATE SET user_id = excluded.user_id, p256dh = excluded.p256dh, auth = excluded.auth
+  `).run(endpoint, uid, keys!.p256dh as string, keys!.auth as string);
+}
+
+export async function deletePushSubscription(endpoint: string) {
+  const { id: uid } = await requireUser();
+  db.prepare("DELETE FROM push_subscriptions WHERE endpoint = ? AND user_id = ?").run(String(endpoint), uid);
+}
+
+/** Test notification to every device of the user. */
+export async function sendTestPush(): Promise<{ error?: string; ok?: string }> {
+  const { id: uid } = await requireUser();
+  const { t, te } = await getT();
+  try {
+    throttle(`push-${uid}`);
+    if (!(await sendPush(uid, { title: "Economy", body: t("push.test"), url: "/reglages" }))) throw new Error("err.push");
+    return { ok: t("ok.pushSent") };
   } catch (e) {
     return { error: te(e) };
   }

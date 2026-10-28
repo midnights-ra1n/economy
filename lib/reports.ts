@@ -1,9 +1,10 @@
 import { ORIGIN } from "./auth";
 import { OWN, getRecurring } from "./budget";
 import { db, log } from "./db";
-import { localToday, reminders } from "./forecast";
+import { fmt, localToday, reminders } from "./forecast";
 import { translator, type Key, type Locale } from "./i18n";
-import { mailEnabled, reminderMail, sendMail, statementMail } from "./mail";
+import { dueWhen, mailEnabled, reminderMail, sendMail, statementMail } from "./mail";
+import { sendPush } from "./push";
 import { periodLabel, statementPdf, type StatementDoc } from "./pdf";
 import { lastCompleted, periodOf, statementFigures, type Frequency, type Period } from "./statement";
 
@@ -105,25 +106,41 @@ export async function runReports() {
 }
 
 /**
- * E-mails each user the payment reminders whose day has come, once per (subscription, due date, days before):
- * several reminders that fall on the same pass go in one e-mail. A failed send is retried on the next pass.
+ * Sends each user the payment reminders whose day has come, once per (subscription, due date, days before), by e-mail
+ * and push notification: several reminders that fall on the same pass go in one message. Retried on the next pass
+ * until one of the two gets through.
  */
 export async function runReminders(today = localToday()) {
-  if (!mailEnabled()) return;
+  const mail = mailEnabled();
   const sent = db.prepare("SELECT 1 FROM reminders_sent WHERE recurring_id = ? AND due = ? AND days = ?");
   const mark = db.prepare("INSERT OR IGNORE INTO reminders_sent (recurring_id, due, days) VALUES (?, ?, ?)");
-  const users = db.prepare("SELECT id, username, currency, locale, email FROM users WHERE email IS NOT NULL").all() as Pick<Owner, "id" | "username" | "currency" | "locale" | "email">[];
+  const users = db.prepare(`
+    SELECT id, username, currency, locale, email, EXISTS (SELECT 1 FROM push_subscriptions p WHERE p.user_id = users.id) AS push FROM users
+  `).all() as (Pick<Owner, "id" | "username" | "currency" | "locale" | "email"> & { push: number })[];
   for (const u of users) {
+    const byMail = mail && !!u.email;
+    if (!byMail && !u.push) continue;
     const pending = getRecurring(u.id).flatMap((r) => reminders(r, today).filter((x) => !sent.get(r.id, x.due, x.days)).map((x) => ({ r, ...x })));
     if (!pending.length) continue;
     const items = [...new Map(pending.map((p) => [`${p.r.id}:${p.due}`, { label: p.r.label, amount: p.r.amount, due: p.due }])).values()]
       .sort((a, b) => a.due.localeCompare(b.due));
-    try {
-      await sendMail(u.email!, reminderMail(u.username, u.currency, items, translator(u.locale ?? "fr"), today, `${ORIGIN}/previsions`));
+    const tr = translator(u.locale ?? "fr");
+    let delivered = false;
+    if (byMail) {
+      try {
+        await sendMail(u.email!, reminderMail(u.username, u.currency, items, tr, today, `${ORIGIN}/previsions`));
+        delivered = true;
+      } catch (e) {
+        log(`Reminder e-mail for user ${u.id} failed: ${e instanceof Error ? e.message : e}`);
+      }
+    }
+    if (u.push) {
+      const body = items.map((i) => `${i.label} : ${fmt(i.amount, u.currency, tr.intl)}, ${dueWhen(i.due, today, tr)}`).join("\n");
+      if (await sendPush(u.id, { title: tr.t("mail.remindSubject"), body, url: "/" })) delivered = true;
+    }
+    if (delivered) {
       for (const p of pending) mark.run(p.r.id, p.due, p.days);
-      log(`${items.length} payment reminder(s) e-mailed to user ${u.id}.`);
-    } catch (e) {
-      log(`Reminders for user ${u.id} failed: ${e instanceof Error ? e.message : e}`);
+      log(`${items.length} payment reminder(s) sent to user ${u.id}.`);
     }
   }
   db.prepare("DELETE FROM reminders_sent WHERE due < date('now', '-1 month')").run();

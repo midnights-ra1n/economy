@@ -25,6 +25,14 @@ const nextConfig: NextConfig = {
           { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
         ],
       },
+      {
+        // Service worker (push notifications): always fetched fresh, and it may only run code from this origin.
+        source: "/sw.js",
+        headers: [
+          { key: "Cache-Control", value: "no-cache, no-store, must-revalidate" },
+          { key: "Content-Security-Policy", value: "default-src 'self'; script-src 'self'" },
+        ],
+      },
     ];
   },
 };

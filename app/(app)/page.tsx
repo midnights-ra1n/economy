@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccounts, getCurrency, getPlanned, getRecurring, getTransactions, postDueRecurring, type Transaction } from "@/lib/budget";
-import { addMonths, cumulativeSpending as cumulative, dayInMonth, fmt, forecast, localToday, ym } from "@/lib/forecast";
+import { addMonths, cumulativeSpending as cumulative, dayInMonth, fmt, forecast, localToday, occursIn, reminders, ym } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
 import { MonthCalendar } from "./calendar";
 import { ForecastChart, SpendingChart } from "./charts";
-import { Card, Empty, Money } from "./ui";
+import { Card, Empty, Money, Row, listClass } from "./ui";
 
 const isSpending = (t: Transaction) => t.amount < 0 && t.category !== "Virement";
 
@@ -14,7 +14,7 @@ export default async function Dashboard() {
   const today = localToday();
   postDueRecurring(uid, today);
   const accounts = getAccounts(uid);
-  const { t, rich, intl } = await getT();
+  const { t, tn, rich, intl } = await getT();
   const monthName = (m: string, style: "long" | "short" = "long") => new Date(`${m}-01T12:00`).toLocaleDateString(intl, { month: style });
   if (!accounts.length) {
     return (
@@ -55,11 +55,17 @@ export default async function Dashboard() {
   const currency = await getCurrency();
   const display = (cents: number, transfer: boolean) => `${!transfer && cents > 0 ? "+" : ""}${fmt(cents, currency, intl)}`;
   const calendar = [
-    ...recurring.map((r) => ({ key: `r${r.id}`, date: dayInMonth(month, r.day), label: r.label, amount: r.amount, transfer: !!r.to_account_id })),
+    ...recurring.filter((r) => occursIn(r, month))
+      .map((r) => ({ key: `r${r.id}`, date: dayInMonth(month, r.day), label: r.label, amount: r.amount, transfer: !!r.to_account_id })),
     ...planned.filter((p) => ym(p.date) === month).map((p) => ({ key: `p${p.id}`, date: p.date, label: p.label, amount: p.amount, transfer: false })),
   ]
     .sort((a, b) => a.date.localeCompare(b.date))
     .map((it) => ({ ...it, display: display(it.amount, it.transfer) }));
+
+  // Payments whose reminder day has come: one line each, soonest first.
+  const due = recurring
+    .flatMap((r) => reminders(r, today).slice(0, 1).map((x) => ({ r, due: x.due, days: Math.round((Date.parse(x.due) - Date.parse(today)) / 864e5) })))
+    .sort((a, b) => a.due.localeCompare(b.due));
 
   const points = [
     { label: t("dash.today"), value: total, display: short.format(total / 100) },
@@ -145,6 +151,19 @@ export default async function Dashboard() {
           </span>
         </p>
       ))}
+
+      {due.length > 0 && (
+        <Card title={t("dash.reminders")} action={<Link href="/previsions" className="text-sm text-muted hover:text-ink">{t("dash.manage")}</Link>}>
+          <ul className={listClass}>
+            {due.map(({ r, due, days }) => (
+              <Row key={`${r.id}:${due}`} lead={days ? tn("dash.dueIn", days) : t("dash.dueToday")} title={r.label}
+                sub={new Date(`${due}T12:00`).toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" })}>
+                <Money cents={r.amount} signed />
+              </Row>
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <Card title={t("dash.spending")}>
         <div className="mb-4 flex flex-wrap items-end justify-between gap-x-6 gap-y-2">

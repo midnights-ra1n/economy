@@ -3,7 +3,11 @@
 
 export type Account = { id: number; name: string; kind: string; balance: number; min_balance: number | null };
 // amount is signed for account_id; to_account_id (transfer) receives -amount.
-export type Recurring = { id: number; label: string; amount: number; day: number; account_id: number; to_account_id: number | null; last_posted: string };
+// It comes back every `every` months from last_posted; remind lists days before each due date, "7,1" (null: none).
+export type Recurring = {
+  id: number; label: string; amount: number; day: number; account_id: number; to_account_id: number | null; last_posted: string;
+  every: number; remind: string | null;
+};
 export type Planned = { id: number; label: string; amount: number; date: string; account_id: number };
 
 export const ym = (date: string) => date.slice(0, 7);
@@ -21,18 +25,48 @@ export function dayInMonth(month: string, day: number): string {
   return `${month}-${String(Math.min(day, last)).padStart(2, "0")}`;
 }
 
+export function monthsBetween(from: string, to: string): number {
+  const [a, b] = [from, to].map((m) => m.split("-").map(Number));
+  return (b[0] - a[0]) * 12 + b[1] - a[1];
+}
+
+/** True when a recurrence falls in this month: every `every` months, counted from the last one posted. */
+export const occursIn = (r: Pick<Recurring, "every" | "last_posted">, month: string) => monthsBetween(r.last_posted, month) % r.every === 0;
+
+export function addDays(date: string, n: number): string {
+  const d = new Date(`${date}T12:00`);
+  d.setDate(d.getDate() + n);
+  return localToday(d);
+}
+
 export function localToday(now = new Date()): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 }
 
 /** Recurrence dates not yet posted, up to and including today. */
-export function duePosts(rec: Pick<Recurring, "day" | "last_posted">, today: string): string[] {
+export function duePosts(rec: Pick<Recurring, "day" | "last_posted" | "every">, today: string): string[] {
   const dates: string[] = [];
-  for (let m = addMonths(rec.last_posted, 1); m <= ym(today); m = addMonths(m, 1)) {
+  for (let m = addMonths(rec.last_posted, rec.every); m <= ym(today); m = addMonths(m, rec.every)) {
     const d = dayInMonth(m, rec.day);
     if (d <= today) dates.push(d);
   }
   return dates;
+}
+
+/**
+ * Reminders that are on as of today: one per (due date, days before) whose reminder day has come and whose due date has not passed.
+ * Starts at the last posted month, so a payment posted this morning still gets its same-day reminder.
+ */
+export function reminders(r: Pick<Recurring, "day" | "last_posted" | "every" | "remind">, today: string): { due: string; days: number }[] {
+  const days = r.remind ? r.remind.split(",").map(Number) : [];
+  if (!days.length) return [];
+  const max = Math.max(...days);
+  const out: { due: string; days: number }[] = [];
+  for (let m = r.last_posted; ; m = addMonths(m, r.every)) {
+    const due = dayInMonth(m, r.day);
+    if (addDays(due, -max) > today) return out;
+    if (due >= today) for (const d of days) if (addDays(due, -d) <= today) out.push({ due, days: d });
+  }
 }
 
 /** "12,50" | "12.5" | "-3" → cents. Returns null when not a number. */
@@ -68,7 +102,7 @@ export function forecast(accounts: Account[], recurring: Recurring[], planned: P
   for (let i = 0; i < months; i++) {
     const month = addMonths(current, i);
     for (const r of recurring) {
-      if (i > 0 || dayInMonth(month, r.day) > today) {
+      if (occursIn(r, month) && (i > 0 || dayInMonth(month, r.day) > today)) {
         add(r.account_id, r.amount);
         add(r.to_account_id, -r.amount);
       }

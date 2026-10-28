@@ -5,7 +5,7 @@ import { revalidatePath } from "next/cache";
 import { requireUser, verifyPassword, assertNotLocked, recordFailure } from "@/lib/auth";
 import { OWN, assertOwnAccounts, transferTwin, wipeBudget, type Transaction } from "@/lib/budget";
 import { db, tx } from "@/lib/db";
-import { CURRENCIES, SCHEMA, parseBackup } from "@/lib/backup";
+import { CURRENCIES, EVERY, REMIND, SCHEMA, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
 import { isLocale } from "@/lib/i18n";
 import { LOCALE_COOKIE, getT } from "@/lib/locale";
@@ -90,16 +90,29 @@ export async function updateTransaction(form: FormData) {
   await done();
 }
 
+/** Day, frequency, next due month (this month when monthly) and reminder days of a subscription. */
+function schedule(form: FormData) {
+  const day = id(form, "day");
+  if (day > 31) throw new Error("Invalid day");
+  const every = Number(form.get("every") ?? 1);
+  if (!EVERY.includes(every as never)) throw new Error("Invalid frequency");
+  const today = localToday();
+  const next = every === 1 ? ym(today) : String(form.get("next"));
+  if (!/^\d{4}-\d{2}$/.test(next)) throw new Error("Invalid month");
+  // Already past: assume it is paid and reflected in the current balance.
+  const lastPosted = dayInMonth(next, day) <= today ? next : addMonths(next, -every);
+  // "7, 1" → "7,1": distinct, largest first.
+  const days = [...new Set(String(form.get("remind") ?? "").split(/[\s,;]+/).filter(Boolean).map(Number))].sort((a, b) => b - a).join(",");
+  if (days && !REMIND.test(days)) throw new Error("Invalid reminders");
+  return { day, every, lastPosted, remind: days || null };
+}
+
 export async function addRecurring(form: FormData) {
   const { id: uid } = await requireUser();
   const e = entry(uid, form);
-  const day = id(form, "day");
-  if (day > 31) throw new Error("Invalid day");
-  const today = localToday();
-  // Already past this month: assume it is paid and reflected in the current balance.
-  const lastPosted = dayInMonth(ym(today), day) <= today ? ym(today) : addMonths(ym(today), -1);
-  db.prepare("INSERT INTO recurring (account_id, to_account_id, label, amount, day, category, last_posted) VALUES (?, ?, ?, ?, ?, ?, ?)")
-    .run(e.account_id, e.to_account_id, e.label, e.amount, day, e.category, lastPosted);
+  const s = schedule(form);
+  db.prepare("INSERT INTO recurring (account_id, to_account_id, label, amount, day, category, last_posted, every, remind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.lastPosted, s.every, s.remind);
   await done();
 }
 
@@ -112,13 +125,16 @@ export async function addPlanned(form: FormData) {
 }
 
 // Already posted operations stay as they are; the new values apply from the next posting.
+// Monthly: never move last_posted back, or a month already posted would post again.
 export async function updateRecurring(form: FormData) {
   const { id: uid } = await requireUser();
   const e = entry(uid, form);
-  const day = id(form, "day");
-  if (day > 31) throw new Error("Invalid day");
-  db.prepare(`UPDATE recurring SET account_id = ?, to_account_id = ?, label = ?, amount = ?, day = ?, category = ? WHERE id = ? AND ${OWN}`)
-    .run(e.account_id, e.to_account_id, e.label, e.amount, day, e.category, id(form), uid);
+  const s = schedule(form);
+  db.prepare(`
+    UPDATE recurring SET account_id = ?, to_account_id = ?, label = ?, amount = ?, day = ?, category = ?, every = ?, remind = ?,
+      last_posted = ${s.every === 1 ? "max(last_posted, ?)" : "?"}
+    WHERE id = ? AND ${OWN}
+  `).run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.every, s.remind, s.lastPosted, id(form), uid);
   await done();
 }
 
@@ -206,7 +222,7 @@ export async function importData(_: { error?: string; ok?: string }, form: FormD
           `INSERT INTO ${table} (${[...cols, ...(table === "accounts" ? ["user_id"] : [])].join(", ")}) VALUES (${cols.map(() => "?").join(", ")}${table === "accounts" ? ", ?" : ""})`,
         );
         for (const row of backup[table]) {
-          const values = cols.map((c) => (c === "account_id" || c === "to_account_id" ? ref(row[c]) : ((row[c] ?? null) as number | string | null)));
+          const values = cols.map((c) => (c === "account_id" || c === "to_account_id" ? ref(row[c]) : ((row[c] ?? (c === "every" ? 1 : null)) as number | string | null)));
           const { lastInsertRowid } = insert.run(...values, ...(table === "accounts" ? [uid] : []));
           if (table === "accounts") accountIds.set(row.id, Number(lastInsertRowid));
         }

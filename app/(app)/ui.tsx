@@ -1,7 +1,8 @@
 import type { ReactNode } from "react";
 import { getCurrency } from "@/lib/budget";
 import { getT } from "@/lib/locale";
-import { fmt } from "@/lib/forecast";
+import { addMonths, fmt, ym } from "@/lib/forecast";
+import { EVERY } from "@/lib/backup";
 import type { Account } from "@/lib/forecast";
 import { ConfirmButton, EditButton } from "./client";
 import { deleteRow } from "./actions";
@@ -157,9 +158,26 @@ export async function EntryForm({
             <input name="date" type="date" required defaultValue={v?.date ?? today} className={input} />
           </Field>
         ) : (
-          <Field label={t("entry.everyMonth")}>
-            <input name="day" type="number" min={1} max={31} required defaultValue={v?.day ?? Number(today.slice(8))} className={input} />
-          </Field>
+          <>
+            <Field label={t("entry.every")}>
+              <select name="every" defaultValue={v?.every ?? 1} className={input}>
+                {EVERY.map((n) => <option key={n} value={n}>{t(`freq.${n}`)}</option>)}
+              </select>
+            </Field>
+            <Field label={t("entry.dueDay")}>
+              <input name="day" type="number" min={1} max={31} required defaultValue={v?.day ?? Number(today.slice(8))} className={input} />
+            </Field>
+            {/* Which month comes next only matters when it is not every month (hidden, without client JS, while monthly). */}
+            <Field label={t("entry.next")} className="group-has-[select[name=every]>option[value='1']:checked]:hidden">
+              <input name="next" type="month" required defaultValue={v?.next ?? addMonths(ym(today), 1)} className={input} />
+            </Field>
+            <Field label={t("entry.remind")}>
+              <input
+                name="remind" inputMode="numeric" maxLength={20} defaultValue={v?.remind?.replace(/,/g, ", ") ?? ""} placeholder={t("entry.remindPlaceholder")}
+                pattern="\s*\d{1,2}(\s*[,; ]\s*\d{1,2}){0,4}\s*" title={t("entry.remindHelp")} className={input}
+              />
+            </Field>
+          </>
         )}
       </div>
       <button className={`${button} w-full py-3`}>{submit ?? t("common.add")}</button>
@@ -170,6 +188,7 @@ export async function EntryForm({
 export type EntryValues = {
   id: number; type: "depense" | "revenu" | "virement"; amount: number; label: string;
   account_id: number; to_account_id?: number | null; category: string | null; date?: string; day?: number;
+  every?: number; next?: string; remind?: string | null;
 };
 
 /** Values of a stored row (signed amount, "Virement" category) as the entry form takes them. */

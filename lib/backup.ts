@@ -2,6 +2,10 @@
 
 export const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "JPY"] as const;
 
+/** Months between two payments of a recurrence, and its reminder days ("7,1": up to 5 values, 0 to 90 days before). */
+export const EVERY = [1, 2, 3, 6, 12] as const;
+export const REMIND = /^([0-9]|[1-8][0-9]|90)(,([0-9]|[1-8][0-9]|90)){0,4}$/;
+
 type Row = Record<string, unknown>;
 export type Backup = {
   app: "economy";
@@ -26,6 +30,8 @@ export const SCHEMA = {
   recurring: {
     id: int, account_id: int, to_account_id: optional(int), label: text(80), amount: int,
     day: (v: unknown) => int(v) && (v as number) >= 1 && (v as number) <= 31, category: optional(text(40)), last_posted: month,
+    // Optional: backups made before these columns existed restore as monthly, without reminders.
+    every: optional((v) => EVERY.includes(v as never)), remind: optional((v) => typeof v === "string" && REMIND.test(v)),
   },
   planned: { id: int, account_id: int, label: text(80), amount: int, date, category: optional(text(40)) },
 } as const;

@@ -1,9 +1,9 @@
 import { ORIGIN } from "./auth";
-import { OWN } from "./budget";
+import { OWN, getRecurring } from "./budget";
 import { db, log } from "./db";
-import { localToday } from "./forecast";
+import { localToday, reminders } from "./forecast";
 import { translator, type Key, type Locale } from "./i18n";
-import { mailEnabled, sendMail, statementMail } from "./mail";
+import { mailEnabled, reminderMail, sendMail, statementMail } from "./mail";
 import { periodLabel, statementPdf, type StatementDoc } from "./pdf";
 import { lastCompleted, periodOf, statementFigures, type Frequency, type Period } from "./statement";
 
@@ -104,7 +104,32 @@ export async function runReports() {
   cleanupStatements();
 }
 
-/** Runs the scheduler now and every hour (started once per server process). */
+/**
+ * E-mails each user the payment reminders whose day has come, once per (subscription, due date, days before):
+ * several reminders that fall on the same pass go in one e-mail. A failed send is retried on the next pass.
+ */
+export async function runReminders(today = localToday()) {
+  if (!mailEnabled()) return;
+  const sent = db.prepare("SELECT 1 FROM reminders_sent WHERE recurring_id = ? AND due = ? AND days = ?");
+  const mark = db.prepare("INSERT OR IGNORE INTO reminders_sent (recurring_id, due, days) VALUES (?, ?, ?)");
+  const users = db.prepare("SELECT id, username, currency, locale, email FROM users WHERE email IS NOT NULL").all() as Pick<Owner, "id" | "username" | "currency" | "locale" | "email">[];
+  for (const u of users) {
+    const pending = getRecurring(u.id).flatMap((r) => reminders(r, today).filter((x) => !sent.get(r.id, x.due, x.days)).map((x) => ({ r, ...x })));
+    if (!pending.length) continue;
+    const items = [...new Map(pending.map((p) => [`${p.r.id}:${p.due}`, { label: p.r.label, amount: p.r.amount, due: p.due }])).values()]
+      .sort((a, b) => a.due.localeCompare(b.due));
+    try {
+      await sendMail(u.email!, reminderMail(u.username, u.currency, items, translator(u.locale ?? "fr"), today, `${ORIGIN}/previsions`));
+      for (const p of pending) mark.run(p.r.id, p.due, p.days);
+      log(`${items.length} payment reminder(s) e-mailed to user ${u.id}.`);
+    } catch (e) {
+      log(`Reminders for user ${u.id} failed: ${e instanceof Error ? e.message : e}`);
+    }
+  }
+  db.prepare("DELETE FROM reminders_sent WHERE due < date('now', '-1 month')").run();
+}
+
+/** Runs the scheduler (statements, then reminders) now and every hour (started once per server process). */
 export function startReports() {
   const g = globalThis as unknown as { reports?: NodeJS.Timeout };
   if (g.reports) return;
@@ -112,7 +137,7 @@ export function startReports() {
   const pass = async () => {
     if (running) return;
     running = true;
-    await runReports().finally(() => (running = false));
+    await runReports().then(() => runReminders()).catch((e) => log(`Scheduler failed: ${e}`)).finally(() => (running = false));
   };
   void pass();
   g.reports = setInterval(pass, 3600e3);

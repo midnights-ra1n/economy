@@ -97,6 +97,43 @@ export function statementMail(doc: StatementDoc, { t, intl }: Pick<T, "t" | "int
   return { subject: doc.sample ? t("mail.testSubject") : `${t("st.title")} — ${period}`, html, text };
 }
 
+export type ReminderItem = { label: string; amount: number; due: string };
+
+/** Reminder e-mail: the payments coming up, same dark header as the statements. */
+export function reminderMail(user: string, currency: string, items: ReminderItem[], { t, tn, intl }: Pick<T, "t" | "tn" | "intl">, today: string, link: string) {
+  const when = (due: string) => {
+    const days = Math.round((Date.parse(due) - Date.parse(today)) / 864e5);
+    const date = new Date(`${due}T12:00`).toLocaleDateString(intl, { weekday: "long", day: "numeric", month: "long" });
+    return `${date} (${days ? tn("dash.dueIn", days) : t("dash.dueToday")})`;
+  };
+  const html = `<!doctype html><html><body style="margin:0;padding:0;background:#f6f6f7;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background:#f6f6f7;padding:32px 12px;"><tr><td align="center">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:560px;background:#ffffff;border:1px solid #e6e6ea;border-radius:16px;overflow:hidden;">
+    <tr><td style="background:#141417;padding:28px 32px 30px;">
+      <div style="font:600 14px ${sans};color:#f2f2f3;">Economy</div>
+      <div style="font:600 28px ${sans};color:#f2f2f3;letter-spacing:-0.02em;margin-top:22px;">${esc(t("mail.remindSubject"))}</div>
+    </td></tr>
+    <tr><td style="padding:28px 32px 8px;font:15px/1.5 ${sans};color:#1c1c1f;">${esc(t("mail.remindIntro", { name: user }))}</td></tr>
+    <tr><td style="padding:4px 32px 24px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-collapse:collapse;">
+        ${items.map((i) => `<tr>
+          <td style="padding:10px 0;border-bottom:1px solid #e6e6ea;font:15px ${sans};color:#1c1c1f;">${esc(i.label)}
+            <div style="font:13px ${sans};color:#6e6e76;margin-top:2px;">${esc(when(i.due))}</div></td>
+          <td align="right" style="padding:10px 0;border-bottom:1px solid #e6e6ea;font:14px ${mono};color:${i.amount < 0 ? "#d64545" : "#1f9d5b"};white-space:nowrap;">${esc(fmt(i.amount, currency, intl))}</td>
+        </tr>`).join("")}
+      </table>
+    </td></tr>
+    <tr><td style="padding:18px 32px;border-top:1px solid #e6e6ea;background:#fafafb;font:12px/1.5 ${sans};color:#6e6e76;">
+      ${esc(t("mail.remindWhy"))} <a href="${esc(link)}" style="color:#3e5bea;">${esc(t("mail.remindManage"))}</a>
+    </td></tr>
+  </table></td></tr></table></body></html>`;
+  const text = [
+    t("mail.remindIntro", { name: user }), "",
+    ...items.map((i) => `${i.label}: ${fmt(i.amount, currency, intl)}, ${when(i.due)}`), "", `${t("mail.remindWhy")} ${link}`,
+  ].join("\n");
+  return { subject: items.length === 1 ? `${t("mail.remindSubject")} : ${items[0].label}` : t("mail.remindSubject"), html, text };
+}
+
 export async function sendMail(to: string, message: { subject: string; html: string; text: string }, attachments: { filename: string; content: Buffer }[] = []) {
   const c = smtpConfig();
   if (!c) throw new Error("err.mailOff");

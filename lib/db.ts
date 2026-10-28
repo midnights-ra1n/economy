@@ -111,6 +111,15 @@ function migrate(d: DatabaseSync) {
     `),
     // v5: day of the month the monthly statement is made and e-mailed (28 at most: every month has it).
     () => d.exec("ALTER TABLE users ADD COLUMN report_day INTEGER NOT NULL DEFAULT 1 CHECK (report_day BETWEEN 1 AND 28)"),
+    // v6: recurrences every N months, payment reminders (days before, "7,1") and the reminders already e-mailed.
+    () => d.exec(`
+      ALTER TABLE recurring ADD COLUMN every INTEGER NOT NULL DEFAULT 1 CHECK (every IN (1, 2, 3, 6, 12));
+      ALTER TABLE recurring ADD COLUMN remind TEXT;
+      CREATE TABLE reminders_sent (
+        recurring_id INTEGER NOT NULL REFERENCES recurring(id) ON DELETE CASCADE, due TEXT NOT NULL, days INTEGER NOT NULL,
+        PRIMARY KEY (recurring_id, due, days)
+      );
+    `),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

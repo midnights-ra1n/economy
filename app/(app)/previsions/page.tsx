@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { requireUser } from "@/lib/auth";
 import { getAccounts, getCategories, getPlanned, getRecurring } from "@/lib/budget";
-import { localToday } from "@/lib/forecast";
+import { addMonths, dayInMonth, localToday } from "@/lib/forecast";
 import { addPlanned, addRecurring, payPlanned, updatePlanned, updateRecurring } from "../actions";
 import { getT } from "@/lib/locale";
+import type { Key } from "@/lib/i18n";
 import { Card, DeleteButton, EditEntry, Empty, EntryForm, Money, PageHeader, Row, entryValues, listClass } from "../ui";
 
 export default async function Previsions() {
@@ -18,29 +19,37 @@ export default async function Previsions() {
   const categories = getCategories(uid);
   const recurring = getRecurring(uid);
   const planned = getPlanned(uid);
-  // Transfers move money between own accounts: not a cost.
-  const monthly = recurring.filter((r) => !r.to_account_id).reduce((s, r) => s + r.amount, 0);
+  // Transfers move money between own accounts: not a cost. A yearly payment counts for a twelfth each month.
+  const monthly = Math.round(recurring.filter((r) => !r.to_account_id).reduce((s, r) => s + r.amount / r.every, 0));
+  const shortDate = (d: string) => new Date(`${d}T12:00`).toLocaleDateString(intl, { day: "2-digit", month: "2-digit" });
 
   return (
     <>
       <PageHeader title={t("nav.forecast")} sub={t("fc.sub")} />
       <Card title={t("fc.monthly")} action={<span className="text-sm text-muted">{t("fc.monthlyNet")} <Money cents={monthly} signed /></span>}>
-        <p className="mb-4 text-sm text-muted">{t("fc.monthlyHelp")}</p>
+        <p className="mb-4 text-sm text-muted">{t("fc.monthlyHelp")} {t("fc.remindHelp")}</p>
         <EntryForm action={addRecurring} accounts={accounts} categories={categories} when="day" today={today} />
         {recurring.length > 0 && (
           <ul className={`mt-4 border-t border-line ${listClass}`}>
-            {recurring.map((r) => (
+            {recurring.map((r) => {
+              const next = addMonths(r.last_posted, r.every);
+              return (
               <Row
                 key={r.id}
-                lead={t("fc.onDay", { day: r.day })}
+                lead={r.every === 1 ? t("fc.onDay", { day: r.day }) : shortDate(dayInMonth(next, r.day))}
                 title={r.label}
-                sub={r.to_account_id ? t("fc.fromTo", { from: names[r.account_id], to: names[r.to_account_id] }) : [names[r.account_id], r.category].filter(Boolean).join(", ")}
+                sub={[
+                  r.to_account_id ? t("fc.fromTo", { from: names[r.account_id], to: names[r.to_account_id] }) : [names[r.account_id], r.category].filter(Boolean).join(", "),
+                  r.every !== 1 && t(`freq.${r.every}` as Key),
+                  r.remind && t("fc.remindList", { days: r.remind.replace(/,/g, ", ") }),
+                ].filter(Boolean).join(" · ")}
               >
                 <Money cents={r.amount} signed />
-                <EditEntry action={updateRecurring} accounts={accounts} categories={categories} when="day" today={today} values={entryValues(r)} />
+                <EditEntry action={updateRecurring} accounts={accounts} categories={categories} when="day" today={today} values={{ ...entryValues(r), next }} />
                 <DeleteButton table="recurring" id={r.id} />
               </Row>
-            ))}
+              );
+            })}
           </ul>
         )}
       </Card>

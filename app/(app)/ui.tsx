@@ -117,7 +117,7 @@ export async function EntryForm({
   values?: EntryValues;
 }) {
   const { t } = await getT();
-  const options = accounts.map((a) => <option key={a.id} value={a.id}>{a.name}</option>);
+  const options = accounts.map((a) => <option key={a.id} value={a.id}>{a.bank ? `${a.name} · ${a.bank}` : a.name}</option>);
   const types = [
     ["depense", t("entry.expense")], ["revenu", t("entry.income")],
     ...(transfer && accounts.length > 1 ? [["virement", t("entry.transfer")]] : []),

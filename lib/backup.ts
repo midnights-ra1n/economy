@@ -25,7 +25,12 @@ const date = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}$/.test
 const month = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}$/.test(v);
 
 export const SCHEMA = {
-  accounts: { id: int, name: text(40), kind: (v: unknown) => v === "courant" || v === "epargne", initial_balance: int, min_balance: optional(int) },
+  accounts: {
+    id: int, name: text(40), kind: (v: unknown) => v === "courant" || v === "epargne", initial_balance: int, min_balance: optional(int),
+    // Optional: backups made before these columns existed restore as plain accounts.
+    product: optional((v) => ["livret_a", "livret_jeune", "pea", "resto"].includes(v as string)), bank: optional(text(40)),
+    ceiling: optional(int), deposits_base: optional(int),
+  },
   transactions: { id: int, account_id: int, label: text(80), amount: int, date, category: optional(text(40)) },
   recurring: {
     id: int, account_id: int, to_account_id: optional(int), label: text(80), amount: int,

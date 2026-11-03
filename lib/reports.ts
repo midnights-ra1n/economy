@@ -1,4 +1,5 @@
 import { ORIGIN } from "./auth";
+import { syncCalendars } from "./caldav";
 import { OWN, getRecurring } from "./budget";
 import { db, log } from "./db";
 import { fmt, localToday, reminders } from "./forecast";
@@ -146,7 +147,7 @@ export async function runReminders(today = localToday()) {
   db.prepare("DELETE FROM reminders_sent WHERE due < date('now', '-1 month')").run();
 }
 
-/** Runs the scheduler (statements, then reminders) now and every hour (started once per server process). */
+/** Runs the scheduler (statements, reminders, then calendars) now and every hour (started once per server process). */
 export function startReports() {
   const g = globalThis as unknown as { reports?: NodeJS.Timeout };
   if (g.reports) return;
@@ -154,7 +155,7 @@ export function startReports() {
   const pass = async () => {
     if (running) return;
     running = true;
-    await runReports().then(() => runReminders()).catch((e) => log(`Scheduler failed: ${e}`)).finally(() => (running = false));
+    await runReports().then(() => runReminders()).then(() => syncCalendars()).catch((e) => log(`Scheduler failed: ${e}`)).finally(() => (running = false));
   };
   void pass();
   g.reports = setInterval(pass, 3600e3);

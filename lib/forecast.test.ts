@@ -74,3 +74,19 @@ test("reminders fire from their day until the due date, several per payment", ()
   // Across a month boundary, and clamped to the month's last day.
   assert.deepEqual(reminders({ day: 31, last_posted: "2027-01", every: 1, remind: "3" }, "2027-02-25"), [{ due: "2027-02-28", days: 3 }]);
 });
+
+test("ceilings: a livret counts its balance, a PEA only its deposits, and only a forecast overshoot warns", () => {
+  const accounts = [
+    { id: 1, name: "Courant", kind: "courant", balance: 500000, min_balance: null },
+    { id: 2, name: "Livret A", kind: "epargne", product: "livret_a", balance: 2250000, min_balance: null, ceiling: 2295000, ceiling_used: 2250000 },
+    // Worth more than its ceiling, but only 149 000 € were paid in.
+    { id: 3, name: "PEA", kind: "epargne", product: "pea", balance: 20000000, min_balance: null, ceiling: 15000000, ceiling_used: 14900000 },
+    // Already over (interest): no warning without new deposits.
+    { id: 4, name: "Livret Jeune", kind: "epargne", product: "livret_jeune", balance: 161000, min_balance: null, ceiling: 160000, ceiling_used: 161000 },
+  ];
+  const tr = (id: number, to: number, amount: number) =>
+    ({ id, label: "Épargne", amount: -amount, day: 1, account_id: 1, to_account_id: to, last_posted: "2026-10", every: 1, remind: null });
+  const { ceilings } = forecast(accounts, [tr(1, 2, 20000), tr(2, 3, 50000)], [], "2026-10-10", 6);
+  // Livret A: 22 500 + 200/month passes 22 950 in the 3rd month. PEA: 149 000 + 500/month passes 150 000 in the 3rd month.
+  assert.deepEqual(ceilings.map((c) => [c.account.id, c.month, c.used]), [[2, "2027-01", 2310000], [3, "2027-01", 15050000]]);
+});

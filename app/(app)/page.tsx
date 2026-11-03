@@ -28,7 +28,7 @@ export default async function Dashboard() {
   const short = new Intl.NumberFormat(intl, { style: "currency", currency: await getCurrency(), maximumFractionDigits: 0 });
   const recurring = getRecurring(uid);
   const planned = getPlanned(uid);
-  const { months, alerts } = forecast(accounts, recurring, planned, today);
+  const { months, alerts, ceilings } = forecast(accounts, recurring, planned, today);
   const month = ym(today);
   const prevMonth = addMonths(month, -1);
   const sum = (b: Record<number, number>) => Object.values(b).reduce((s, v) => s + v, 0);
@@ -93,6 +93,7 @@ export default async function Dashboard() {
                 <span className={`size-1.5 rounded-full ${a.kind === "courant" ? "bg-bar-accent" : "bg-bar-muted/50"}`} />
                 <span className="truncate">{a.name}</span>
               </p>
+              {a.bank && <p className="-mt-1 truncate text-xs text-bar-muted">{a.bank}</p>}
               <p className="text-lg font-medium"><Money cents={a.balance} /></p>
               <p className="text-xs text-bar-muted">
                 {t("dash.endOf", { month: monthName(month, "short") })}{" "}
@@ -148,6 +149,21 @@ export default async function Dashboard() {
               balance: <Money cents={a.balance} />,
               min: <Money cents={a.account.min_balance!} />,
             }, { month: monthName(a.month) })}
+          </span>
+        </p>
+      ))}
+
+      {ceilings.map((c) => (
+        <p key={`c${c.account.id}`} role="alert" className="flex gap-3 rounded-2xl border border-accent/30 bg-accent/5 p-4 text-sm">
+          <svg viewBox="0 0 24 24" className="mt-0.5 size-5 shrink-0 text-accent" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+            <path d="M4 20h16M12 16V4M7 9l5-5 5 5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span>
+            {rich("dash.ceilingAlert", {
+              account: <strong className="font-semibold">{c.account.name}</strong>,
+              ceiling: <Money cents={c.account.ceiling!} />,
+              used: <Money cents={c.used} />,
+            }, { month: monthName(c.month) })}
           </span>
         </p>
       ))}

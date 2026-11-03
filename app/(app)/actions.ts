@@ -2,8 +2,9 @@
 
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { requireUser, verifyPassword, assertNotLocked, recordFailure } from "@/lib/auth";
-import { OWN, assertOwnAccounts, transferTwin, wipeBudget, type Transaction } from "@/lib/budget";
+import { OWN, PEA_DEPOSITS, assertOwnAccounts, transferTwin, wipeBudget, type Transaction } from "@/lib/budget";
 import { db, tx } from "@/lib/db";
 import { CURRENCIES, EVERY, REMIND, SCHEMA, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
@@ -12,6 +13,8 @@ import { LOCALE_COOKIE, getT } from "@/lib/locale";
 import { isEmail, throttle } from "@/lib/mail";
 import { sendTestEmail } from "@/lib/reports";
 import { PUSH_SERVICE, sendPush } from "@/lib/push";
+import { calendarUrl, checkCalendar, clearCalendar, syncCalendar } from "@/lib/caldav";
+import { seal, unseal } from "@/lib/secret";
 
 // Every action re-checks the session: server actions are public endpoints.
 // Invalid input throws: the forms' HTML validation already blocks honest mistakes, so these messages
@@ -56,7 +59,9 @@ function entry(uid: number, form: FormData) {
   };
 }
 
-async function done() {
+/** Refreshes the pages. With a user id, also updates their calendar once the response is sent (subscriptions changed). */
+async function done(calendarOf?: number) {
+  if (calendarOf) after(() => syncCalendar(calendarOf));
   revalidatePath("/", "layout");
 }
 
@@ -114,7 +119,7 @@ export async function addRecurring(form: FormData) {
   const s = schedule(form);
   db.prepare("INSERT INTO recurring (account_id, to_account_id, label, amount, day, category, last_posted, every, remind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
     .run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.lastPosted, s.every, s.remind);
-  await done();
+  await done(uid);
 }
 
 export async function addPlanned(form: FormData) {
@@ -136,7 +141,7 @@ export async function updateRecurring(form: FormData) {
       last_posted = ${s.every === 1 ? "max(last_posted, ?)" : "?"}
     WHERE id = ? AND ${OWN}
   `).run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.every, s.remind, s.lastPosted, id(form), uid);
-  await done();
+  await done(uid);
 }
 
 export async function updatePlanned(form: FormData) {
@@ -166,22 +171,44 @@ export async function deleteRow(form: FormData) {
   const table = String(form.get("table"));
   if (!(table in deletable)) throw new Error("Invalid table"); // whitelist: the name is interpolated below
   db.prepare(`DELETE FROM ${table} WHERE id = ? AND ${table === "accounts" ? "user_id = ?" : OWN}`).run(id(form), uid);
-  await done();
+  await done(uid);
 }
+
+/** Account types of the form: products are kept apart from kind, which says whether the money is for spending. */
+const ACCOUNT_TYPES: Record<string, { kind: "courant" | "epargne"; product: string | null }> = {
+  courant: { kind: "courant", product: null },
+  resto: { kind: "courant", product: "resto" },
+  livret_a: { kind: "epargne", product: "livret_a" },
+  livret_jeune: { kind: "epargne", product: "livret_jeune" },
+  pea: { kind: "epargne", product: "pea" },
+  epargne: { kind: "epargne", product: null },
+};
 
 export async function saveAccount(form: FormData) {
   const { id: uid } = await requireUser();
-  const kind = String(form.get("kind"));
-  if (kind !== "courant" && kind !== "epargne") throw new Error("Invalid account type");
-  const min = String(form.get("min_balance") ?? "").trim() ? cents(form, "min_balance", true) : null;
+  const typeName = String(form.get("type"));
+  if (!Object.hasOwn(ACCOUNT_TYPES, typeName)) throw new Error("Invalid account type");
+  const type = ACCOUNT_TYPES[typeName];
+  const optCents = (key: string) => (String(form.get(key) ?? "").trim() ? cents(form, key, true) : null);
+  const min = optCents("min_balance");
+  // Empty: the product's legal ceiling. Spending accounts have none.
+  const ceiling = type.kind === "epargne" ? optCents("ceiling") : null;
+  if (ceiling !== null && ceiling <= 0) throw new Error("Invalid ceiling");
   // The user types the real current balance (to match the bank); store it as an offset from the transactions.
   const aid = form.get("id") ? id(form) : null;
   if (aid) assertOwnAccounts(uid, aid);
   const { s } = db.prepare("SELECT COALESCE(SUM(amount), 0) AS s FROM transactions WHERE account_id = ?").get(aid) as { s: number };
-  const values = [text(form, "name", 40), kind, cents(form, "balance", true) - s, min] as const;
-  if (aid) db.prepare("UPDATE accounts SET name = ?, kind = ?, initial_balance = ?, min_balance = ? WHERE id = ?").run(...values, aid);
-  else db.prepare("INSERT INTO accounts (name, kind, initial_balance, min_balance, user_id) VALUES (?, ?, ?, ?, ?)").run(...values, uid);
-  await done();
+  // Same for the deposits of a PEA, offset from the transfers in.
+  const deposits = type.product === "pea" ? optCents("deposits") : null;
+  const { d } = db.prepare(`SELECT ${PEA_DEPOSITS} AS d FROM (SELECT ? AS id) a`).get(aid) as { d: number };
+  const values = [
+    text(form, "name", 40), type.kind, type.product, optText(form, "bank"), cents(form, "balance", true) - s, min, ceiling,
+    deposits === null ? null : deposits - d,
+  ] as const;
+  const cols = "name = ?, kind = ?, product = ?, bank = ?, initial_balance = ?, min_balance = ?, ceiling = ?, deposits_base = ?";
+  if (aid) db.prepare(`UPDATE accounts SET ${cols} WHERE id = ?`).run(...values, aid);
+  else db.prepare("INSERT INTO accounts (name, kind, product, bank, initial_balance, min_balance, ceiling, deposits_base, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)").run(...values, uid);
+  await done(uid);
 }
 
 /** Interface language and display currency. The language also goes in a cookie so the login page keeps it. */
@@ -193,7 +220,7 @@ export async function savePreferences(form: FormData) {
   if (!isLocale(locale)) throw new Error("Unknown language");
   db.prepare("UPDATE users SET currency = ?, locale = ? WHERE id = ?").run(c, locale, uid);
   (await cookies()).set(LOCALE_COOKIE, locale, { maxAge: 365 * 86400, path: "/", sameSite: "lax" });
-  await done();
+  await done(uid);
 }
 
 /**
@@ -230,7 +257,7 @@ export async function importData(_: { error?: string; ok?: string }, form: FormD
       }
       db.prepare("UPDATE users SET currency = ? WHERE id = ?").run(backup.currency, uid);
     });
-    await done();
+    await done(uid);
     return { ok: t("ok.imported", { accounts: backup.accounts.length, operations: backup.transactions.length }) };
   } catch (e) {
     // The transaction rolled back: the previous data is intact.
@@ -250,7 +277,7 @@ export async function wipeMyData(_: { error?: string; ok?: string }, form: FormD
       throw new Error("err.password");
     }
     wipeBudget(uid);
-    await done();
+    await done(uid);
     return { ok: t("ok.wiped") };
   } catch (e) {
     return { error: te(e) };
@@ -317,4 +344,56 @@ export async function sendTestPush(): Promise<{ error?: string; ok?: string }> {
   } catch (e) {
     return { error: te(e) };
   }
+}
+
+/**
+ * Connects the user's CalDAV calendar (Nextcloud): checked with the given credentials before it is saved, then filled.
+ * An empty password keeps the saved one. Another calendar first gets its events removed from the old one.
+ */
+export async function saveCalendar(_: { error?: string; ok?: string }, form: FormData) {
+  const { id: uid } = await requireUser();
+  const { t, te } = await getT();
+  try {
+    throttle(`caldav-${uid}`); // each try makes the server send requests
+    const url = calendarUrl(String(form.get("url") ?? ""));
+    const user = text(form, "user", 100);
+    const typed = String(form.get("pass") ?? "");
+    const old = db.prepare("SELECT caldav_url, caldav_pass FROM users WHERE id = ?").get(uid) as { caldav_url: string | null; caldav_pass: string | null };
+    const pass = typed || (old.caldav_pass && unseal(old.caldav_pass));
+    if (!pass || pass.length > 200) throw new Error("err.caldavAuth");
+    await checkCalendar({ url, user, pass });
+    if (old.caldav_url && old.caldav_url !== url) await clearCalendar(uid);
+    db.prepare("UPDATE users SET caldav_url = ?, caldav_user = ?, caldav_pass = ?, caldav_error = NULL WHERE id = ?").run(url, user, seal(pass), uid);
+    const error = await syncCalendar(uid);
+    if (error) throw new Error(error);
+    await done();
+    return { ok: t("ok.caldavSaved") };
+  } catch (e) {
+    await done();
+    return { error: te(e) };
+  }
+}
+
+export async function syncCalendarNow() {
+  const { id: uid } = await requireUser();
+  const { t, te } = await getT();
+  try {
+    if (!(db.prepare("SELECT caldav_url FROM users WHERE id = ?").get(uid) as { caldav_url: string | null }).caldav_url) throw new Error("err.caldavOff");
+    throttle(`caldav-${uid}`);
+    const error = await syncCalendar(uid);
+    if (error) throw new Error(error);
+    return { ok: t("ok.caldavSynced") };
+  } catch (e) {
+    return { error: te(e) };
+  } finally {
+    await done();
+  }
+}
+
+/** Removes this app's events from the calendar, then forgets the connection and its password. */
+export async function disconnectCalendar() {
+  const { id: uid } = await requireUser();
+  await clearCalendar(uid);
+  db.prepare("UPDATE users SET caldav_url = NULL, caldav_user = NULL, caldav_pass = NULL, caldav_synced_at = NULL, caldav_error = NULL WHERE id = ?").run(uid);
+  await done();
 }

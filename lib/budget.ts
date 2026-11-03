@@ -1,7 +1,7 @@
 import { cache } from "react";
 import { currentUser } from "./auth";
 import { db, tx } from "./db";
-import { duePosts, localToday, type Account, type Planned, type Recurring } from "./forecast";
+import { DEFAULT_CEILING, duePosts, localToday, type Account, type Planned, type Recurring } from "./forecast";
 
 export type RecurringRow = Recurring & { category: string | null };
 export type PlannedRow = Planned & { category: string | null };
@@ -10,12 +10,21 @@ export type Transaction = { id: number; account_id: number; label: string; amoun
 // Every budget row belongs to a user through its account: all reads and writes are scoped by user id.
 export const OWN = "account_id IN (SELECT id FROM accounts WHERE user_id = ?)";
 
+/** Deposits into a PEA recorded here: transfers in (dividends and gains are not deposits). */
+export const PEA_DEPOSITS = "COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.amount > 0 AND t.category = 'Virement'), 0)";
+
 export const getAccounts = (uid: number) =>
-  db.prepare(`
-    SELECT a.id, a.name, a.kind, a.min_balance, a.initial_balance,
-           a.initial_balance + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id), 0) AS balance
-    FROM accounts a WHERE a.user_id = ? ORDER BY a.kind, a.name
-  `).all(uid) as (Account & { initial_balance: number })[];
+  (db.prepare(`
+    SELECT a.id, a.name, a.kind, a.product, a.bank, a.min_balance, a.initial_balance, a.ceiling,
+           a.initial_balance + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id), 0) AS balance,
+           COALESCE(a.deposits_base, 0) + ${PEA_DEPOSITS} AS deposits
+    FROM accounts a WHERE a.user_id = ? ORDER BY a.kind, a.bank IS NULL, a.bank, a.name
+  `).all(uid) as (Account & { initial_balance: number; deposits: number })[])
+    .map((a) => ({
+      ...a,
+      ceiling: a.ceiling ?? DEFAULT_CEILING[a.product ?? ""] ?? null,
+      ceiling_used: a.product === "pea" ? a.deposits : a.balance,
+    }));
 
 export const getRecurring = (uid: number) => db.prepare(`SELECT * FROM recurring WHERE ${OWN} ORDER BY day, label`).all(uid) as RecurringRow[];
 export const getPlanned = (uid: number) => db.prepare(`SELECT * FROM planned WHERE ${OWN} ORDER BY date, label`).all(uid) as PlannedRow[];

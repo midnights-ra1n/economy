@@ -1,7 +1,15 @@
 // Pure budget logic (no DB, no Next) so it can be tested with `node --test`.
 // Amounts are integer cents. Dates are local "YYYY-MM-DD", months "YYYY-MM".
 
-export type Account = { id: number; name: string; kind: string; balance: number; min_balance: number | null };
+// product: livret_a | livret_jeune | pea | resto (meal vouchers) | null. ceiling: deposit ceiling (null: none);
+// ceiling_used: what counts against it now, the balance, except on a PEA where only deposits count.
+export type Account = {
+  id: number; name: string; kind: string; balance: number; min_balance: number | null;
+  product?: string | null; bank?: string | null; ceiling?: number | null; ceiling_used?: number;
+};
+
+/** Legal deposit ceilings, used when the account has none of its own (cents). */
+export const DEFAULT_CEILING: Record<string, number> = { livret_a: 2295000, livret_jeune: 160000, pea: 15000000 };
 // amount is signed for account_id; to_account_id (transfer) receives -amount.
 // It comes back every `every` months from last_posted; remind lists days before each due date, "7,1" (null: none).
 export type Recurring = {
@@ -85,6 +93,7 @@ export function fmt(cents: number, currency = "EUR", intl = "fr-FR"): string {
 
 export type MonthForecast = { month: string; balances: Record<number, number> };
 export type Alert = { account: Account; month: string; balance: number };
+export type CeilingAlert = { account: Account; month: string; used: number };
 
 /**
  * End-of-month balances for `months` months starting with the current one.
@@ -93,18 +102,25 @@ export type Alert = { account: Account; month: string; balance: number };
  */
 export function forecast(accounts: Account[], recurring: Recurring[], planned: Planned[], today: string, months = 6) {
   const bal: Record<number, number> = Object.fromEntries(accounts.map((a) => [a.id, a.balance]));
-  const add = (id: number | null, v: number) => {
-    if (id != null && id in bal) bal[id] += v;
+  const used: Record<number, number> = Object.fromEntries(accounts.map((a) => [a.id, a.ceiling_used ?? a.balance]));
+  const pea = new Set(accounts.filter((a) => a.product === "pea").map((a) => a.id));
+  const add = (id: number | null, v: number, transfer = false) => {
+    if (id == null || !(id in bal)) return;
+    bal[id] += v;
+    // A PEA's ceiling counts deposits only (transfers in), not its gains or withdrawals.
+    if (!pea.has(id)) used[id] = bal[id];
+    else if (transfer && v > 0) used[id] += v;
   };
   const result: MonthForecast[] = [];
   const alerts: Alert[] = [];
+  const ceilings: CeilingAlert[] = [];
   const current = ym(today);
   for (let i = 0; i < months; i++) {
     const month = addMonths(current, i);
     for (const r of recurring) {
       if (occursIn(r, month) && (i > 0 || dayInMonth(month, r.day) > today)) {
-        add(r.account_id, r.amount);
-        add(r.to_account_id, -r.amount);
+        add(r.account_id, r.amount, !!r.to_account_id);
+        add(r.to_account_id, -r.amount, true);
       }
     }
     for (const p of planned) if (i === 0 ? ym(p.date) <= month : ym(p.date) === month) add(p.account_id, p.amount);
@@ -113,9 +129,14 @@ export function forecast(accounts: Account[], recurring: Recurring[], planned: P
       if (a.min_balance != null && bal[a.id] < a.min_balance && !alerts.some((x) => x.account.id === a.id)) {
         alerts.push({ account: a, month, balance: bal[a.id] });
       }
+      // Only when the forecast pushes it over: interest may already have taken it past the ceiling.
+      const start = a.ceiling_used ?? a.balance;
+      if (a.ceiling != null && used[a.id] > a.ceiling && used[a.id] > start && !ceilings.some((x) => x.account.id === a.id)) {
+        ceilings.push({ account: a, month, used: used[a.id] });
+      }
     }
   }
-  return { months: result, alerts };
+  return { months: result, alerts, ceilings };
 }
 
 /**

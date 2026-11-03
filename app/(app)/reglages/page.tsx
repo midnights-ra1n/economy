@@ -7,7 +7,7 @@ import { VERSION } from "@/lib/version";
 import Link from "next/link";
 import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
-import { importData, saveEmail, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
+import { disconnectCalendar, importData, saveCalendar, saveEmail, syncCalendarNow, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
 import { mailEnabled } from "@/lib/mail";
 import { ConfirmButton, MessageForm, PushToggle } from "../client";
 import { vapidPublicKey } from "@/lib/push";
@@ -28,8 +28,11 @@ export default async function Reglages() {
   const passkeys = db.prepare("SELECT id, name, created_at FROM credentials WHERE user_id = ? ORDER BY created_at").all(user.id) as {
     id: string; name: string; created_at: string;
   }[];
-  const { t, rich, intl, locale } = await getT();
-  const { email } = db.prepare("SELECT email FROM users WHERE id = ?").get(user.id) as { email: string | null };
+  const { t, te, rich, intl, locale } = await getT();
+  const { email, ...cal } = db.prepare("SELECT email, caldav_url, caldav_user, caldav_synced_at, caldav_error FROM users WHERE id = ?").get(user.id) as {
+    email: string | null; caldav_url: string | null; caldav_user: string | null; caldav_synced_at: string | null; caldav_error: string | null;
+  };
+  const when = (sqlite: string) => new Date(`${sqlite.replace(" ", "T")}Z`).toLocaleString(intl, { dateStyle: "medium", timeStyle: "short" });
   return (
     <>
       <PageHeader
@@ -72,6 +75,39 @@ export default async function Reglages() {
       <Card title={t("set.push")}>
         <p className="mb-3 text-sm text-muted">{t("set.pushHelp")}</p>
         <PushToggle publicKey={vapidPublicKey()} />
+      </Card>
+
+      <Card title={t("set.caldav")}>
+        <p className="mb-3 text-sm text-muted">{t("set.caldavHelp")}</p>
+        <MessageForm action={saveCalendar} className="grid gap-3 sm:grid-cols-2">
+          <Field label={t("set.caldavUrl")} className="sm:col-span-2">
+            <input name="url" type="url" required maxLength={500} defaultValue={cal.caldav_url ?? ""} placeholder="https://cloud.exemple.fr/remote.php/dav/calendars/moi/economy/" className={input} />
+          </Field>
+          <Field label={t("set.caldavUser")}>
+            <input name="user" required maxLength={100} defaultValue={cal.caldav_user ?? ""} autoComplete="off" className={input} />
+          </Field>
+          <Field label={t("set.caldavPass")}>
+            <input name="pass" type="password" required={!cal.caldav_url} maxLength={200} autoComplete="new-password" placeholder={cal.caldav_url ? t("set.caldavPassKeep") : ""} className={input} />
+          </Field>
+          <button className={`${button} sm:col-start-2`}>{t("common.save")}</button>
+        </MessageForm>
+        {cal.caldav_url && (
+          <div className="mt-5 space-y-3 border-t border-line pt-5">
+            <p className={`text-sm ${cal.caldav_error ? "text-loss" : "text-muted"}`}>
+              {cal.caldav_error
+                ? t("set.caldavFailed", { error: te(new Error(cal.caldav_error)) })
+                : cal.caldav_synced_at ? t("set.caldavSynced", { date: when(cal.caldav_synced_at) }) : t("set.caldavNever")}
+            </p>
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <MessageForm action={syncCalendarNow} className="flex-1 space-y-2">
+                <button className={`${ghost} w-full`}>{t("set.caldavSync")}</button>
+              </MessageForm>
+              <form action={disconnectCalendar} className="flex-1">
+                <ConfirmButton message={t("set.caldavDisconnectConfirm")} className={`${ghost} w-full text-loss`}>{t("set.caldavDisconnect")}</ConfirmButton>
+              </form>
+            </div>
+          </div>
+        )}
       </Card>
 
       <Card title={t("set.password")}>

@@ -13,11 +13,14 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 ## Features
 
 **Budget**
-- Current and savings accounts, each with an optional **minimum balance rule** ("my savings never go below €1,000")
+- Current and savings accounts across **several banks**, each with an optional **minimum balance rule** ("my savings never go below €1,000")
+- French savings products: **Livret A** and **Livret Jeune** with their legal ceilings, **PEA** (ceiling on deposits, not on value), other savings with a ceiling of your own. Every ceiling can be changed, and the forecast warns before a scheduled transfer goes over it
+- **Meal vouchers** (Swile and others) as their own account type. Swile has no public API: add the monthly top-up as a recurring income and your meals as expenses
 - Expenses, income and transfers between accounts, with categories
 - **Monthly subscriptions, salary and recurring transfers**, posted automatically on their day (missed months are caught up)
 - **Planned one-off expenses**, ticked off once paid
 - **End-of-month forecast** and a **6-month projection**, with an alert when a rule is about to be broken
+- **Nextcloud calendar** (or any CalDAV server): subscriptions and bills become repeating events with their reminders, kept up to date
 - A month calendar of scheduled debits (tap a day to see its items) and a spending curve compared with last month
 
 **Statements**

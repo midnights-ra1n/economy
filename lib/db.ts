@@ -128,6 +128,27 @@ function migrate(d: DatabaseSync) {
       );
       CREATE INDEX push_user ON push_subscriptions(user_id);
     `),
+    // v8: account products (Livret A, Livret Jeune, PEA, meal vouchers) with their bank and deposit ceiling, and the
+    // user's CalDAV calendar (Nextcloud) where subscriptions are written, with the events already sent there.
+    () => d.exec(`
+      ALTER TABLE accounts ADD COLUMN product TEXT CHECK (product IN ('livret_a','livret_jeune','pea','resto'));
+      ALTER TABLE accounts ADD COLUMN bank TEXT;
+      ALTER TABLE accounts ADD COLUMN ceiling INTEGER; -- NULL: the legal ceiling of the product, if any
+      ALTER TABLE accounts ADD COLUMN deposits_base INTEGER; -- PEA: deposits made before the transfers recorded here
+      ALTER TABLE users ADD COLUMN caldav_url TEXT;
+      ALTER TABLE users ADD COLUMN caldav_user TEXT;
+      ALTER TABLE users ADD COLUMN caldav_pass TEXT; -- sealed (lib/secret.ts)
+      ALTER TABLE users ADD COLUMN caldav_synced_at TEXT;
+      ALTER TABLE users ADD COLUMN caldav_error TEXT;
+      CREATE TABLE caldav_events (
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        recurring_id INTEGER NOT NULL, -- no foreign key: a deleted subscription must still be removed from the calendar
+        hash TEXT NOT NULL, PRIMARY KEY (user_id, recurring_id)
+      );
+      -- Savings accounts named after their product get it (and its legal ceiling).
+      UPDATE accounts SET product = CASE lower(trim(name)) WHEN 'livret a' THEN 'livret_a' WHEN 'livret jeune' THEN 'livret_jeune' ELSE 'pea' END
+      WHERE kind = 'epargne' AND lower(trim(name)) IN ('livret a', 'livret jeune', 'pea');
+    `),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

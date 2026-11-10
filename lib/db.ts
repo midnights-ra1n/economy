@@ -149,6 +149,8 @@ function migrate(d: DatabaseSync) {
       UPDATE accounts SET product = CASE lower(trim(name)) WHEN 'livret a' THEN 'livret_a' WHEN 'livret jeune' THEN 'livret_jeune' ELSE 'pea' END
       WHERE kind = 'epargne' AND lower(trim(name)) IN ('livret a', 'livret jeune', 'pea');
     `),
+    // v9: small logo of a subscription (data URI of a 64 px PNG, resized in the browser).
+    () => d.exec("ALTER TABLE recurring ADD COLUMN logo TEXT"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

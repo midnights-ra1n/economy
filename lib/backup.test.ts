@@ -31,3 +31,11 @@ test("transactionsCsv escapes cells and blocks formula injection", () => {
   assert.ok(csv.includes(`"'=HYPERLINK(""x"");1"`));
   assert.ok(csv.includes(";-15,99\r\n"));
 });
+
+test("isLogo accepts small image data URIs only", async () => {
+  const { isLogo } = await import("./backup.ts");
+  assert.ok(isLogo("data:image/png;base64,iVBORw0KGgo="));
+  assert.ok(!isLogo("data:image/svg+xml;base64,PHN2Zz4="));
+  assert.ok(!isLogo("javascript:alert(1)"));
+  assert.ok(!isLogo(`data:image/png;base64,${"A".repeat(30_000)}`));
+});

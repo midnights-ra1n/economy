@@ -227,3 +227,34 @@ export function PushToggle({ publicKey }: { publicKey: string }) {
     </div>
   );
 }
+
+/** Logo picker of a subscription: the image is cropped square and shrunk to 64 px in the browser, then sent as a data URI. */
+export function LogoInput({ value }: { value?: string | null }) {
+  const { t } = useT();
+  const [logo, setLogo] = useState(value ?? "");
+  async function pick(file?: File) {
+    if (!file) return;
+    try {
+      const img = await createImageBitmap(file);
+      const side = Math.min(img.width, img.height);
+      const canvas = document.createElement("canvas");
+      canvas.width = canvas.height = 64;
+      canvas.getContext("2d")!.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, 64, 64);
+      setLogo(canvas.toDataURL("image/png"));
+    } catch {
+      setLogo(""); // not an image the browser can read
+    }
+  }
+  return (
+    <div className="col-span-2 flex items-center gap-3 text-sm">
+      <input type="hidden" name="logo" value={logo} />
+      {/* eslint-disable-next-line @next/next/no-img-element -- a 64 px data URI */}
+      {logo && <img src={logo} alt="" width={40} height={40} className="size-10 rounded-lg object-cover" />}
+      <label className="min-w-0 flex-1 space-y-1">
+        <span className="text-muted">{t("entry.logo")}</span>
+        <input type="file" accept="image/*" onChange={(e) => pick(e.target.files?.[0])} className="block w-full text-sm file:mr-3 file:rounded-lg file:border-0 file:bg-paper file:px-3 file:py-2 file:text-ink" />
+      </label>
+      {logo && <button type="button" onClick={() => setLogo("")} className="text-muted hover:text-loss">{t("entry.logoRemove")}</button>}
+    </div>
+  );
+}

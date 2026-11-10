@@ -6,7 +6,7 @@ import { after } from "next/server";
 import { requireUser, verifyPassword, assertNotLocked, recordFailure } from "@/lib/auth";
 import { OWN, PEA_DEPOSITS, assertOwnAccounts, transferTwin, wipeBudget, type Transaction } from "@/lib/budget";
 import { db, tx } from "@/lib/db";
-import { CURRENCIES, EVERY, REMIND, SCHEMA, parseBackup } from "@/lib/backup";
+import { CURRENCIES, EVERY, REMIND, SCHEMA, isLogo, parseBackup } from "@/lib/backup";
 import { dayInMonth, localToday, parseCents, addMonths, ym } from "@/lib/forecast";
 import { isLocale } from "@/lib/i18n";
 import { LOCALE_COOKIE, getT } from "@/lib/locale";
@@ -110,15 +110,17 @@ function schedule(form: FormData) {
   // "7, 1" → "7,1": distinct, largest first.
   const days = [...new Set(String(form.get("remind") ?? "").split(/[\s,;]+/).filter(Boolean).map(Number))].sort((a, b) => b - a).join(",");
   if (days && !REMIND.test(days)) throw new Error("Invalid reminders");
-  return { day, every, lastPosted, remind: days || null };
+  const logo = String(form.get("logo") ?? "");
+  if (logo && !isLogo(logo)) throw new Error("Invalid logo");
+  return { day, every, lastPosted, remind: days || null, logo: logo || null };
 }
 
 export async function addRecurring(form: FormData) {
   const { id: uid } = await requireUser();
   const e = entry(uid, form);
   const s = schedule(form);
-  db.prepare("INSERT INTO recurring (account_id, to_account_id, label, amount, day, category, last_posted, every, remind) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)")
-    .run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.lastPosted, s.every, s.remind);
+  db.prepare("INSERT INTO recurring (account_id, to_account_id, label, amount, day, category, last_posted, every, remind, logo) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)")
+    .run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.lastPosted, s.every, s.remind, s.logo);
   await done(uid);
 }
 
@@ -137,10 +139,10 @@ export async function updateRecurring(form: FormData) {
   const e = entry(uid, form);
   const s = schedule(form);
   db.prepare(`
-    UPDATE recurring SET account_id = ?, to_account_id = ?, label = ?, amount = ?, day = ?, category = ?, every = ?, remind = ?,
+    UPDATE recurring SET account_id = ?, to_account_id = ?, label = ?, amount = ?, day = ?, category = ?, every = ?, remind = ?, logo = ?,
       last_posted = ${s.every === 1 ? "max(last_posted, ?)" : "?"}
     WHERE id = ? AND ${OWN}
-  `).run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.every, s.remind, s.lastPosted, id(form), uid);
+  `).run(e.account_id, e.to_account_id, e.label, e.amount, s.day, e.category, s.every, s.remind, s.logo, s.lastPosted, id(form), uid);
   await done(uid);
 }
 

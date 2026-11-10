@@ -14,7 +14,7 @@ export const DEFAULT_CEILING: Record<string, number> = { livret_a: 2295000, livr
 // It comes back every `every` months from last_posted; remind lists days before each due date, "7,1" (null: none).
 export type Recurring = {
   id: number; label: string; amount: number; day: number; account_id: number; to_account_id: number | null; last_posted: string;
-  every: number; remind: string | null;
+  every: number; remind: string | null; logo?: string | null;
 };
 export type Planned = { id: number; label: string; amount: number; date: string; account_id: number };
 

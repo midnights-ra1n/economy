@@ -38,6 +38,7 @@ export default async function Previsions() {
                 key={r.id}
                 lead={r.every === 1 ? t("fc.onDay", { day: r.day }) : shortDate(dayInMonth(next, r.day))}
                 title={r.label}
+                logo={r.logo}
                 sub={[
                   r.to_account_id ? t("fc.fromTo", { from: names[r.account_id], to: names[r.to_account_id] }) : [names[r.account_id], r.category].filter(Boolean).join(", "),
                   r.every !== 1 && t(`freq.${r.every}` as Key),

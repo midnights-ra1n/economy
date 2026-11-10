@@ -4,7 +4,7 @@ import { getT } from "@/lib/locale";
 import { addMonths, fmt, ym } from "@/lib/forecast";
 import { EVERY } from "@/lib/backup";
 import type { Account } from "@/lib/forecast";
-import { ConfirmButton, EditButton } from "./client";
+import { ConfirmButton, EditButton, LogoInput } from "./client";
 import { deleteRow } from "./actions";
 
 export const input =
@@ -61,9 +61,11 @@ export function Field({ label, children, className = "" }: { label: string; chil
 }
 
 /** Rows of a list: date or tag on the left, label in the middle, amount and actions on the right. */
-export function Row({ lead, title, sub, children }: { lead: ReactNode; title: ReactNode; sub?: ReactNode; children: ReactNode }) {
+export function Row({ lead, title, sub, logo, children }: { lead: ReactNode; title: ReactNode; sub?: ReactNode; logo?: string | null; children: ReactNode }) {
   return (
     <li className="flex items-center gap-3 py-2.5">
+      {/* eslint-disable-next-line @next/next/no-img-element -- a 64 px data URI */}
+      {logo && <img src={logo} alt="" width={32} height={32} className="size-8 shrink-0 rounded-lg object-cover" />}
       <span className="w-11 shrink-0 font-mono text-xs text-muted">{lead}</span>
       <div className="min-w-0 flex-1">
         <p className="truncate">{title}</p>
@@ -171,9 +173,10 @@ export async function EntryForm({
             <Field label={t("entry.next")} className="group-has-[select[name=every]>option[value='1']:checked]:hidden">
               <input name="next" type="month" required defaultValue={v?.next ?? addMonths(ym(today), 1)} className={input} />
             </Field>
+            <LogoInput value={v?.logo} />
             <Field label={t("entry.remind")}>
               <input
-                name="remind" inputMode="numeric" maxLength={20} defaultValue={v?.remind?.replace(/,/g, ", ") ?? ""} placeholder={t("entry.remindPlaceholder")}
+                name="remind" inputMode="numeric" maxLength={20} defaultValue={v ? (v.remind?.replace(/,/g, ", ") ?? "") : "7, 1, 0"} placeholder={t("entry.remindPlaceholder")}
                 pattern="\s*\d{1,2}(\s*[,; ]\s*\d{1,2}){0,4}\s*" title={t("entry.remindHelp")} className={input}
               />
             </Field>
@@ -188,7 +191,7 @@ export async function EntryForm({
 export type EntryValues = {
   id: number; type: "depense" | "revenu" | "virement"; amount: number; label: string;
   account_id: number; to_account_id?: number | null; category: string | null; date?: string; day?: number;
-  every?: number; next?: string; remind?: string | null;
+  every?: number; next?: string; remind?: string | null; logo?: string | null;
 };
 
 /** Values of a stored row (signed amount, "Virement" category) as the entry form takes them. */

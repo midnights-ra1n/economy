@@ -4,6 +4,9 @@ export const CURRENCIES = ["EUR", "USD", "GBP", "CHF", "CAD", "JPY"] as const;
 
 /** Months between two payments of a recurrence, and its reminder days ("7,1": up to 5 values, 0 to 90 days before). */
 export const EVERY = [1, 2, 3, 6, 12] as const;
+/** Logo of a subscription: data URI of a small PNG/WebP/JPEG (the form shrinks it to 64 px, so ~5 KB). */
+export const LOGO = /^data:image\/(png|webp|jpeg);base64,[A-Za-z0-9+/]+={0,2}$/;
+export const isLogo = (v: unknown) => typeof v === "string" && v.length <= 30_000 && LOGO.test(v);
 export const REMIND = /^([0-9]|[1-8][0-9]|90)(,([0-9]|[1-8][0-9]|90)){0,4}$/;
 
 type Row = Record<string, unknown>;
@@ -37,6 +40,7 @@ export const SCHEMA = {
     day: (v: unknown) => int(v) && (v as number) >= 1 && (v as number) <= 31, category: optional(text(40)), last_posted: month,
     // Optional: backups made before these columns existed restore as monthly, without reminders.
     every: optional((v) => EVERY.includes(v as never)), remind: optional((v) => typeof v === "string" && REMIND.test(v)),
+    logo: optional(isLogo),
   },
   planned: { id: int, account_id: int, label: text(80), amount: int, date, category: optional(text(40)) },
 } as const;

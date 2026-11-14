@@ -16,6 +16,7 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 - Current and savings accounts across **several banks**, each with an optional **minimum balance rule** ("my savings never go below €1,000")
 - French savings products: **Livret A** and **Livret Jeune** with their legal ceilings, **PEA** (ceiling on deposits, not on value), other savings with a ceiling of your own. Every ceiling can be changed, and the forecast warns before a scheduled transfer goes over it
 - **Meal vouchers** (Swile and others) as their own account type. Swile has no public API: add the monthly top-up as a recurring income and your meals as expenses
+- **Cash** (your wallet, spent like a current account) and an **emergency cash reserve** (kept aside: give it a minimum and the forecast warns before you dip below it)
 - Expenses, income and transfers between accounts, with categories
 - **Monthly subscriptions, salary and recurring transfers**, posted automatically on their day (missed months are caught up)
 - **Planned one-off expenses**, ticked off once paid
@@ -253,31 +254,41 @@ location / {
 
 From source (`pnpm start`), run it the same way: `HOSTNAME=127.0.0.1 ORIGIN=https://budget.example.com pnpm start`, behind the same proxy.
 
-**Check it**: open `https://budget.example.com`, sign in, add a passkey in **Settings → Passkeys**. If the browser refuses, `ORIGIN` does not match the address bar. Check MCP with `curl -i -X POST https://budget.example.com/mcp`: `401` means it is reachable and wants a token; `403` says why it refuses (HTTPS, Host or Origin).
+**Check it**: open `https://budget.example.com`, sign in, add a passkey in **Settings → Passkeys**. If the browser refuses, `ORIGIN` does not match the address bar. Check MCP with `curl -i -X POST https://budget.example.com/mcp`: `401` means it is reachable and wants a token (its `WWW-Authenticate` header points to `/.well-known/oauth-protected-resource/mcp`); `403` says why it refuses (HTTPS, Host or Origin).
 
 ## MCP server (AI assistants)
 
 The app speaks the [Model Context Protocol](https://modelcontextprotocol.io) (Streamable HTTP transport, stateless, protocol versions 2024-11 to 2025-11) at **`https://budget.example.com/mcp`**. Any compliant client can use it: Claude, ChatGPT, Cursor, VS Code, Gemini CLI, Zed…
 
-1. Over HTTPS (see above), go to **Settings → AI assistants (MCP)**.
-2. Name a token (for example "Claude"), choose **Read only** or **Read and add**, and create it. It is shown **once**: copy it.
-3. Give your client the address and the header `Authorization: Bearer <token>`:
+**Default setup: just the URL.** The server implements the standard [MCP authorization](https://modelcontextprotocol.io/specification/2025-11-25/basic/authorization) (OAuth 2.1 with discovery, dynamic client registration and PKCE), which is what Claude, ChatGPT and Codex do out of the box. Give the client the address; it opens a page of the app where you sign in (passkey or password), choose **Read only** or **Read and add**, and click **Allow**.
 
-   ```bash
-   # Claude Code
-   claude mcp add --transport http economy https://budget.example.com/mcp \
-     --header "Authorization: Bearer eco_..."
-   ```
+| Client | How |
+| ------ | --- |
+| claude.ai, Claude Desktop, Claude mobile | Settings → Connectors → **Add custom connector** → `https://budget.example.com/mcp` |
+| Claude Code | `claude mcp add --transport http economy https://budget.example.com/mcp`, then `/mcp` → Authenticate |
+| ChatGPT | Settings → Apps & Connectors → (developer mode) **Create** → URL `https://budget.example.com/mcp`, authentication **OAuth** |
+| Codex CLI | `codex mcp add economy --url https://budget.example.com/mcp`, then `codex mcp login economy` |
+| Cursor, VS Code, Gemini CLI… | add the URL as a remote (HTTP) server: they sign in the same way |
 
-   ```jsonc
-   // Cursor (.cursor/mcp.json), VS Code (.vscode/mcp.json, key "servers"), Gemini CLI… same shape
-   { "mcpServers": { "economy": { "url": "https://budget.example.com/mcp", "headers": { "Authorization": "Bearer eco_..." } } } }
-   ```
+Each authorization appears in **Settings → AI assistants (MCP)** under the client's name, with its last use: revoke it there. Its access token lasts one hour and is renewed with a refresh token that changes at every use.
 
-   ```jsonc
-   // Clients that only run local (stdio) servers, such as Claude Desktop, go through the mcp-remote bridge
-   { "mcpServers": { "economy": { "command": "npx", "args": ["-y", "mcp-remote", "https://budget.example.com/mcp", "--header", "Authorization: Bearer ${ECONOMY_TOKEN}"], "env": { "ECONOMY_TOKEN": "eco_..." } } } }
-   ```
+**Without OAuth: a static token**, for scripts or a client that cannot sign in. In **Settings → AI assistants (MCP)**, name a token, choose its access and create it. It is shown **once**: copy it, then send it as `Authorization: Bearer <token>`:
+
+```bash
+claude mcp add --transport http economy https://budget.example.com/mcp --header "Authorization: Bearer eco_..."
+```
+
+```jsonc
+// Cursor (.cursor/mcp.json), VS Code (.vscode/mcp.json, key "servers"), Gemini CLI… same shape
+{ "mcpServers": { "economy": { "url": "https://budget.example.com/mcp", "headers": { "Authorization": "Bearer eco_..." } } } }
+```
+
+```toml
+# Codex (~/.codex/config.toml): the token is read from an environment variable
+[mcp_servers.economy]
+url = "https://budget.example.com/mcp"
+bearer_token_env_var = "ECONOMY_TOKEN"
+```
 
 | Tool | Access | What it does |
 | ---- | ------ | ------------ |
@@ -300,13 +311,14 @@ So you can ask your assistant "can I spend €300 on a new phone, or should I wa
 **Security model**
 
 - **HTTPS only.** The app refuses `/mcp` unless `ORIGIN` is `https://` (`localhost` excepted), and refuses requests that came to the proxy in plain HTTP.
+- **OAuth 2.1, public clients only**: authorization code with **PKCE S256** (plain refused), exact `redirect_uri` match (https, loopback http or an app scheme), single-use codes valid 5 minutes, `state` and `iss` returned, the `resource` checked. The consent page cannot be framed. Clients that register but are never authorized are deleted after a day.
 - **One token per client and per user**, 256 random bits. Only its SHA-256 is stored, so a stolen database contains no usable token. A token only ever sees its owner's data, with the same per-user filtering as the web app.
 - **Least privilege**: read-only by default, and **nothing can be deleted or modified** through MCP, not even with a write token. Mistakes are fixed in the app.
 - **Revoke** a token in Settings at any time (instant). Deleting a user deletes their tokens. The settings page shows each token's last use.
 - Brute-force guard shared with the sign-in form (5 failures lock an IP for 15 minutes), `Host` and `Origin` checks against DNS rebinding, requests capped at 64 KB.
 - Amounts are in your display currency, expenses negative. Labels you typed are returned to the model as data: avoid connecting an assistant you do not trust with your finances to a write token.
 
-Limits: authentication is a static bearer token, not OAuth. That covers every client that accepts custom headers (the list above), but not "custom connectors" that can only sign in through OAuth, such as the claude.ai web interface or the ChatGPT web app. Tokens do not expire on their own: revoke the ones you no longer use.
+Limits: static tokens do not expire on their own: revoke the ones you no longer use. Browser-based clients (such as the MCP Inspector) are refused: `/mcp` sends no CORS headers. ChatGPT's deep research mode only uses servers that expose `search` and `fetch` tools, which this one does not.
 
 ## Data, updates and backups
 
@@ -417,5 +429,6 @@ lib/statement.ts  statement periods and figures (pure, tested)
 lib/pdf.ts     PDF statement (pdfkit, Geist fonts from assets/fonts)
 lib/mail.ts    statement e-mail (nodemailer)
 lib/mcp.ts     MCP server: tokens, JSON-RPC, tools (route: app/mcp/route.ts)
+lib/oauth.ts   OAuth 2.1 for MCP clients (routes: app/oauth/, app/.well-known/)
 lib/reports.ts storage, scheduler, e-mail and cleanup of statements
 ```

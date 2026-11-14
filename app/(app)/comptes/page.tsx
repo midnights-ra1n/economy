@@ -7,7 +7,7 @@ import type { Key } from "@/lib/i18n";
 import { Card, DeleteButton, Field, Money, PageHeader, button, input } from "../ui";
 
 // Value of the form's type select: the product, or the plain kind.
-const TYPES = ["courant", "resto", "livret_a", "livret_jeune", "pea", "epargne"] as const;
+const TYPES = ["courant", "resto", "cash", "cash_reserve", "livret_a", "livret_jeune", "pea", "epargne"] as const;
 const typeOf = (a: Account) => a.product ?? a.kind;
 // Suggestions only: any name can be typed.
 const BANKS = ["BoursoBank", "Crédit Agricole", "BNP Paribas", "Société Générale", "LCL", "Caisse d'Épargne", "Banque Populaire", "Crédit Mutuel", "La Banque Postale", "Fortuneo", "Revolut", "Swile"];
@@ -96,6 +96,7 @@ export default async function Comptes() {
         </Card>
       ))}
       <p className="px-1 text-sm text-muted">{t("acc.help")}</p>
+      <p className="px-1 text-sm text-muted">{t("acc.cashHelp")}</p>
       <p className="px-1 text-sm text-muted">{t("acc.restoHelp")}</p>
     </>
   );

@@ -111,7 +111,7 @@ dialog.sheet::backdrop { background: rgb(0 0 0 / 0.35); backdrop-filter: blur(2p
 }
 
 /* Account form (Comptes): ceiling fields for savings accounts, deposits for a PEA, without a script. */
-form:has(select[name="type"] :is(option[value="courant"], option[value="resto"]):checked) .if-savings,
+form:has(select[name="type"] :is(option[value="courant"], option[value="resto"], option[value="cash"], option[value="cash_reserve"]):checked) .if-savings,
 form:not(:has(select[name="type"] option[value="pea"]:checked)) .if-pea {
   display: none;
 }

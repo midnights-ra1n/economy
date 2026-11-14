@@ -2,12 +2,14 @@ import { redirect } from "next/navigation";
 import { hasPasskey, isLoggedIn, isSetUp } from "@/lib/auth";
 import { LOCALES, LOCALE_NAMES } from "@/lib/i18n";
 import { setupMinutesLeft } from "@/lib/db";
+import { safeNext } from "@/lib/oauth";
 import { getT } from "@/lib/locale";
 import { setLocaleCookie } from "./actions";
 import { LoginForm, SetupForm } from "./passkey-forms";
 
-export default async function LoginPage() {
-  if (await isLoggedIn()) redirect("/");
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const next = safeNext((await searchParams).next); // back to an MCP client's authorization after signing in
+  if (await isLoggedIn()) redirect(next);
   const setup = !isSetUp();
   const minutes = setup ? setupMinutesLeft() : 0;
   const locked = setup && !minutes;
@@ -19,7 +21,7 @@ export default async function LoginPage() {
         <h1 className="text-4xl font-semibold leading-tight tracking-tight">{t(locked ? "login.lockedTitle" : setup ? "login.setupTitle" : "login.welcome")}</h1>
         {setup && <p className="text-muted">{locked ? t("login.lockedText") : t("login.setupHelp", { min: minutes })}</p>}
       </div>
-      {locked ? null : setup ? <SetupForm /> : <LoginForm passkeys={hasPasskey()} />}
+      {locked ? null : setup ? <SetupForm /> : <LoginForm passkeys={hasPasskey()} next={next} />}
       <form action={setLocaleCookie} className="flex justify-center gap-1 text-sm">
         {LOCALES.map((l) => (
           <button

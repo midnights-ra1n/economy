@@ -1,5 +1,5 @@
 // MCP server (Model Context Protocol, Streamable HTTP transport, stateless): JSON-RPC 2.0 messages POSTed to /mcp.
-// Any MCP client (Claude, ChatGPT, Cursor, VS Code, mcp-remote…) connects with `Authorization: Bearer <token>`.
+// Any MCP client connects with `Authorization: Bearer <token>`: a token granted through OAuth (lib/oauth.ts) or made in the settings.
 // Tokens are per user, shown once, stored hashed, and either read-only or read-write. No tool deletes anything.
 import { randomBytes } from "node:crypto";
 import { db, sha256 } from "./db.ts";
@@ -20,7 +20,7 @@ export function createToken(uid: number, name: string, scope: Scope): string {
 export function findToken(header: string | null): Caller | null {
   const token = /^Bearer (eco_[\w-]{43})$/.exec(header ?? "")?.[1];
   if (!token) return null;
-  const row = db.prepare("SELECT id, user_id, scope FROM api_tokens WHERE token_hash = ?").get(sha256(token)) as
+  const row = db.prepare("SELECT id, user_id, scope FROM api_tokens WHERE token_hash = ? AND (expires_at IS NULL OR expires_at > ?)").get(sha256(token), Date.now()) as
     | { id: number; user_id: number; scope: Scope }
     | undefined;
   if (!row) return null;
@@ -172,7 +172,7 @@ const TOOLS: {
     run: ({ uid }, a) => {
       const price = typeof a.amount === "number" ? parseCents(String(a.amount)) : null;
       if (!price || price <= 0) throw new Error('"amount" must be a positive number with at most 2 decimals');
-      const acc = a.account_id === undefined ? getAccounts(uid).find((x) => x.kind === "courant") : getAccounts(uid).find((x) => x.id === ownAccount(uid, a));
+      const acc = a.account_id === undefined ? (getAccounts(uid).find((x) => x.kind === "courant" && !x.product) ?? getAccounts(uid).find((x) => x.kind === "courant")) : getAccounts(uid).find((x) => x.id === ownAccount(uid, a));
       if (!acc) throw new Error("No account to pay from (see list_accounts)");
       const label = a.label === undefined ? "Purchase" : str(a, "label"), when = date(a, "date");
       const now = simulate(uid, acc.id, price, when, label);

@@ -49,7 +49,7 @@ export function SetupForm() {
   );
 }
 
-export function LoginForm({ passkeys }: { passkeys: boolean }) {
+export function LoginForm({ passkeys, next }: { passkeys: boolean; next: string }) {
   const { state, onSubmit, pending } = useKeepFieldsAction(login);
   const router = useRouter();
   const [passkeyError, setPasskeyError] = useState("");
@@ -61,7 +61,7 @@ export function LoginForm({ passkeys }: { passkeys: boolean }) {
     setBusy(true);
     try {
       await verifyAuthentication(await startAuthentication({ optionsJSON: await authenticationOptions() }));
-      router.push("/");
+      router.push(next);
     } catch (e) {
       // The browser's own errors (cancelled, timed out) are readable; server ones are hidden in production.
       setPasskeyError(e instanceof Error && e.name !== "Error" ? e.message : t("login.passkeyFailed"));
@@ -73,6 +73,7 @@ export function LoginForm({ passkeys }: { passkeys: boolean }) {
   return (
     <div className="space-y-4">
       <form onSubmit={onSubmit} className="space-y-4">
+        <input type="hidden" name="next" value={next} />
         <Input label={t("login.username")} name="username" required autoComplete="username" />
         <Input label={t("login.password")} name="password" type="password" required autoComplete="current-password" />
         <button className={btn} disabled={pending}>{pending ? t("login.signingIn") : t("login.signIn")}</button>

@@ -12,6 +12,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { db, setupMinutesLeft, tx } from "@/lib/db";
 import { isLocale } from "@/lib/i18n";
+import { safeNext } from "@/lib/oauth";
 import { LOCALE_COOKIE, getLocale, getT } from "@/lib/locale";
 import { cookies } from "next/headers";
 import {
@@ -72,7 +73,7 @@ export async function login(_: FormState, form: FormData): Promise<FormState> {
     await createSession(user.id);
   });
   if (state.error) return state;
-  redirect("/");
+  redirect(safeNext(form.get("next")));
 }
 
 export async function changePassword(_: FormState, form: FormData): Promise<FormState> {

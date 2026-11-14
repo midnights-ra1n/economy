@@ -1,7 +1,7 @@
 // Pure budget logic (no DB, no Next) so it can be tested with `node --test`.
 // Amounts are integer cents. Dates are local "YYYY-MM-DD", months "YYYY-MM".
 
-// product: livret_a | livret_jeune | pea | resto (meal vouchers) | null. ceiling: deposit ceiling (null: none);
+// product: livret_a | livret_jeune | pea | resto (meal vouchers) | cash | cash_reserve (emergency cash) | null. ceiling: deposit ceiling (null: none);
 // ceiling_used: what counts against it now, the balance, except on a PEA where only deposits count.
 export type Account = {
   id: number; name: string; kind: string; balance: number; min_balance: number | null;

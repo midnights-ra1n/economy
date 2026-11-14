@@ -166,6 +166,26 @@ function migrate(d: DatabaseSync) {
     `),
     // v11: free text the user gives to AI assistants (goals, habits, rules of thumb), served by the MCP server.
     () => d.exec("ALTER TABLE users ADD COLUMN mcp_context TEXT"),
+    // v12: OAuth 2.1 for MCP clients (Claude, ChatGPT, Codex…): registered clients, one-time codes, expiring tokens.
+    () => d.exec(`
+      CREATE TABLE oauth_clients (id TEXT PRIMARY KEY, name TEXT NOT NULL, redirect_uris TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE oauth_codes (
+        code_hash TEXT PRIMARY KEY, client_id TEXT NOT NULL REFERENCES oauth_clients(id) ON DELETE CASCADE,
+        user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE, redirect_uri TEXT NOT NULL,
+        challenge TEXT NOT NULL, scope TEXT NOT NULL, expires_at INTEGER NOT NULL
+      );
+      ALTER TABLE api_tokens ADD COLUMN expires_at INTEGER; -- ms; NULL: a static token made in the settings
+      ALTER TABLE api_tokens ADD COLUMN refresh_hash TEXT;
+      ALTER TABLE api_tokens ADD COLUMN client_id TEXT REFERENCES oauth_clients(id) ON DELETE CASCADE;
+      CREATE UNIQUE INDEX api_tokens_refresh ON api_tokens(refresh_hash);
+    `),
+    // v13: cash and the emergency cash reserve. A CHECK cannot be altered: swap the column for a new one.
+    () => d.exec(`
+      ALTER TABLE accounts RENAME COLUMN product TO product_old;
+      ALTER TABLE accounts ADD COLUMN product TEXT CHECK (product IN ('livret_a','livret_jeune','pea','resto','cash','cash_reserve'));
+      UPDATE accounts SET product = product_old;
+      ALTER TABLE accounts DROP COLUMN product_old;
+    `),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

@@ -181,6 +181,8 @@ export async function deleteRow(form: FormData) {
 const ACCOUNT_TYPES: Record<string, { kind: "courant" | "epargne"; product: string | null }> = {
   courant: { kind: "courant", product: null },
   resto: { kind: "courant", product: "resto" },
+  cash: { kind: "courant", product: "cash" },
+  cash_reserve: { kind: "epargne", product: "cash_reserve" }, // set aside, not for spending: its minimum is the rule that matters
   livret_a: { kind: "epargne", product: "livret_a" },
   livret_jeune: { kind: "epargne", product: "livret_jeune" },
   pea: { kind: "epargne", product: "pea" },

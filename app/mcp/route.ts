@@ -10,10 +10,13 @@ export async function POST(request: Request) {
   if (refusal) return json({ error: refusal }, 403);
   // Same brute-force guard as the login form: 5 bad tokens lock the IP for 15 minutes.
   try { await assertNotLocked(); } catch { return json({ error: "Too many attempts, try again later." }, 429); }
-  const caller = findToken(request.headers.get("authorization"));
+  const auth = request.headers.get("authorization");
+  const caller = findToken(auth);
   if (!caller) {
-    await recordFailure();
-    return json({ error: "Invalid or missing token." }, 401, { "WWW-Authenticate": 'Bearer realm="economy"' });
+    // No token at all is how OAuth clients start (discovery), not an attack: only wrong tokens count.
+    if (auth) await recordFailure();
+    const challenge = `Bearer realm="economy", resource_metadata="${ORIGIN}/.well-known/oauth-protected-resource/mcp"${auth ? ', error="invalid_token"' : ""}`;
+    return json({ error: "Invalid or missing token." }, 401, { "WWW-Authenticate": challenge });
   }
   await clearFailures();
   const raw = await request.text();

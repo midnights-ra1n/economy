@@ -15,6 +15,7 @@ import { sendTestEmail } from "@/lib/reports";
 import { PUSH_SERVICE, sendPush } from "@/lib/push";
 import { calendarUrl, checkCalendar, clearCalendar, syncCalendar } from "@/lib/caldav";
 import { seal, unseal } from "@/lib/secret";
+import { createToken } from "@/lib/mcp";
 
 // Every action re-checks the session: server actions are public endpoints.
 // Invalid input throws: the forms' HTML validation already blocks honest mistakes, so these messages
@@ -398,4 +399,35 @@ export async function disconnectCalendar() {
   await clearCalendar(uid);
   db.prepare("UPDATE users SET caldav_url = NULL, caldav_user = NULL, caldav_pass = NULL, caldav_synced_at = NULL, caldav_error = NULL WHERE id = ?").run(uid);
   await done();
+}
+
+/** New MCP access token. Shown once in the answer: only its hash is kept. */
+export async function createApiToken(_: { error?: string; ok?: string }, form: FormData) {
+  const { id: uid } = await requireUser();
+  const { t, te } = await getT();
+  try {
+    const scope = form.get("scope") === "write" ? "write" : "read";
+    const n = (db.prepare("SELECT COUNT(*) AS n FROM api_tokens WHERE user_id = ?").get(uid) as { n: number }).n;
+    if (n >= 20) throw new Error("err.tokenLimit");
+    const token = createToken(uid, text(form, "name", 40), scope);
+    revalidatePath("/reglages");
+    return { ok: t("set.mcpCreated", { token }) };
+  } catch (e) {
+    return { error: te(e) };
+  }
+}
+
+/** Free text served to AI assistants by the MCP server (goals, habits, rules of thumb). */
+export async function saveMcpContext(_: { error?: string; ok?: string }, form: FormData) {
+  const { id: uid } = await requireUser();
+  const { t } = await getT();
+  db.prepare("UPDATE users SET mcp_context = ? WHERE id = ?").run(String(form.get("context") ?? "").trim().slice(0, 2000) || null, uid);
+  revalidatePath("/reglages");
+  return { ok: t("ok.mcpContext") };
+}
+
+export async function deleteApiToken(form: FormData) {
+  const { id: uid } = await requireUser();
+  db.prepare("DELETE FROM api_tokens WHERE id = ? AND user_id = ?").run(id(form), uid);
+  revalidatePath("/reglages");
 }

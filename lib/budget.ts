@@ -1,7 +1,5 @@
-import { cache } from "react";
-import { currentUser } from "./auth";
-import { db, tx } from "./db";
-import { DEFAULT_CEILING, duePosts, localToday, type Account, type Planned, type Recurring } from "./forecast";
+import { db, tx } from "./db.ts";
+import { DEFAULT_CEILING, duePosts, localToday, type Account, type Planned, type Recurring } from "./forecast.ts";
 
 export type RecurringRow = Recurring & { category: string | null };
 export type PlannedRow = Planned & { category: string | null };
@@ -75,6 +73,3 @@ export const wipeBudget = (uid: number) =>
     db.prepare("DELETE FROM accounts WHERE user_id = ?").run(uid);
     db.prepare("DELETE FROM statements WHERE user_id = ?").run(uid);
   });
-
-/** Display currency of the logged-in user. Amounts are not converted: it is a display unit. */
-export const getCurrency = cache(async () => (await currentUser())?.currency ?? "EUR");

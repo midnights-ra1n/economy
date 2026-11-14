@@ -4,10 +4,12 @@ services:
     # To build from source instead, add `build: .` and run `docker compose up -d --build`.
     image: ghcr.io/midnights-ra1n/economy:latest
     restart: unless-stopped
+    # HTTPS needed for passkeys, the PWA and the MCP server: put a reverse proxy in front (see "Putting it online"
+    # in the README, with a ready-made Caddy example), then publish this port on 127.0.0.1 only: "127.0.0.1:3000:3000".
     ports:
       - "3000:3000"
     environment:
-      # Public URL of the app (passkeys are bound to this domain). Must be https outside localhost.
+      # Public URL of the app (passkeys are bound to this domain, MCP needs it). Must be https outside localhost.
       ORIGIN: ${ORIGIN:-http://localhost:3000}
       TZ: ${TZ:-Europe/Paris}
     volumes:

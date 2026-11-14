@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { getCurrency } from "@/lib/budget";
+import { getCurrency } from "@/lib/auth";
 import { getT } from "@/lib/locale";
 import { addMonths, fmt, ym } from "@/lib/forecast";
 import { EVERY } from "@/lib/backup";

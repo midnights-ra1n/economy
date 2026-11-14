@@ -1,4 +1,4 @@
-import { requireUser } from "@/lib/auth";
+import { ORIGIN, requireUser } from "@/lib/auth";
 import { CURRENCIES } from "@/lib/backup";
 import { db } from "@/lib/db";
 import { LOCALES, LOCALE_NAMES } from "@/lib/i18n";
@@ -7,7 +7,7 @@ import { VERSION } from "@/lib/version";
 import Link from "next/link";
 import { changePassword, deletePasskey, logout } from "../../login/actions";
 import { AddPasskeyForm } from "../../login/passkey-forms";
-import { disconnectCalendar, importData, saveCalendar, saveEmail, syncCalendarNow, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
+import { createApiToken, deleteApiToken, saveMcpContext, disconnectCalendar, importData, saveCalendar, saveEmail, syncCalendarNow, savePreferences, sendMyTestEmail, wipeMyData } from "../actions";
 import { mailEnabled } from "@/lib/mail";
 import { ConfirmButton, MessageForm, PushToggle } from "../client";
 import { vapidPublicKey } from "@/lib/push";
@@ -28,6 +28,10 @@ export default async function Reglages() {
   const passkeys = db.prepare("SELECT id, name, created_at FROM credentials WHERE user_id = ? ORDER BY created_at").all(user.id) as {
     id: string; name: string; created_at: string;
   }[];
+  const tokens = db.prepare("SELECT id, name, scope, created_at, last_used FROM api_tokens WHERE user_id = ? ORDER BY id").all(user.id) as {
+    id: number; name: string; scope: "read" | "write"; created_at: string; last_used: string | null;
+  }[];
+  const { mcp_context } = db.prepare("SELECT mcp_context FROM users WHERE id = ?").get(user.id) as { mcp_context: string | null };
   const { t, te, rich, intl, locale } = await getT();
   const { email, ...cal } = db.prepare("SELECT email, caldav_url, caldav_user, caldav_synced_at, caldav_error FROM users WHERE id = ?").get(user.id) as {
     email: string | null; caldav_url: string | null; caldav_user: string | null; caldav_synced_at: string | null; caldav_error: string | null;
@@ -138,6 +142,44 @@ export default async function Reglages() {
           </ul>
         )}
         <AddPasskeyForm />
+      </Card>
+
+      <Card title={t("set.mcp")}>
+        <p className="mb-3 text-sm text-muted">{t("set.mcpHelp")}</p>
+        <p className="mb-4 break-all rounded-xl border border-line px-3 py-2 font-mono text-sm">{ORIGIN}/mcp</p>
+        {tokens.length > 0 && (
+          <ul className={`mb-4 ${listClass}`}>
+            {tokens.map((k) => (
+              <li key={k.id} className="flex items-center justify-between gap-2 py-2.5">
+                <div>
+                  <p>{k.name} <span className="text-xs text-muted">· {t(k.scope === "write" ? "set.mcpWrite" : "set.mcpRead")}</span></p>
+                  <p className="text-xs text-muted">{k.last_used ? t("set.mcpUsed", { date: when(k.last_used) }) : t("set.mcpNever")}</p>
+                </div>
+                <form action={deleteApiToken}>
+                  <input type="hidden" name="id" value={k.id} />
+                  <ConfirmButton message={t("set.mcpRevoke")} className="text-sm text-loss hover:underline">{t("set.mcpRevokeButton")}</ConfirmButton>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+        <MessageForm action={createApiToken} className="grid gap-3 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <Field label={t("set.mcpName")}><input name="name" required maxLength={40} placeholder="Claude" autoComplete="off" className={input} /></Field>
+          <Field label={t("set.mcpScope")}>
+            <select name="scope" className={input}>
+              <option value="read">{t("set.mcpRead")}</option>
+              <option value="write">{t("set.mcpWrite")}</option>
+            </select>
+          </Field>
+          <button className={button}>{t("set.mcpCreate")}</button>
+        </MessageForm>
+        <MessageForm action={saveMcpContext} className="mt-5 space-y-3 border-t border-line pt-5">
+          <Field label={t("set.mcpContext")}>
+            <textarea name="context" rows={5} maxLength={2000} defaultValue={mcp_context ?? ""} placeholder={t("set.mcpContextPlaceholder")} className={input} />
+          </Field>
+          <p className="text-sm text-muted">{t("set.mcpContextHelp")}</p>
+          <button className={button}>{t("common.save")}</button>
+        </MessageForm>
       </Card>
 
       <Card title={t("set.data")}>

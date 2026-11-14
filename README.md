@@ -32,6 +32,7 @@ Track your accounts, subscriptions and spending, plan one-off expenses, and see 
 **Everyday use**
 - Add a transaction in a few taps from anywhere, with the **+** button
 - Installable **PWA** for desktop and mobile, light and dark mode
+- **MCP server** so AI assistants (Claude, ChatGPT, Cursor…) can read your budget and, if you allow it, add transactions ([details](#mcp-server-ai-assistants))
 - **French and English**, per user, with the browser language as the default
 - Display currency of your choice: euro by default, also US dollar, pound, Swiss franc, Canadian dollar, yen
 - **Import / export**: full JSON backup (restorable), transactions as CSV for Excel or LibreOffice
@@ -149,26 +150,163 @@ The database is created in `./data` (change it with `DATA_DIR`).
 
 | Variable   | Default                          | Purpose                                                                 |
 | ---------- | -------------------------------- | ----------------------------------------------------------------------- |
-| `ORIGIN`   | `http://localhost:3000`          | Exact public URL, no trailing slash. Passkeys are bound to this domain. |
+| `ORIGIN`   | `http://localhost:3000`          | Exact public URL, no trailing slash, `https://` outside localhost. Passkeys are bound to its domain; the MCP server only works over https. |
 | `DATA_DIR` | `./data` (`/data` in Docker, `/var/lib/economy` with the .deb) | Folder of the SQLite database.                                          |
 | `TZ`       | `Europe/Paris` in Docker         | Time zone used for monthly due dates.                                   |
 | `PORT`     | `3000`                           | HTTP port.                                                              |
+| `HOSTNAME` | all interfaces                   | Set `127.0.0.1` when a reverse proxy runs on the same machine (not Docker). |
 | `UPDATE_CHECK` | `true`                       | Set to `false` to stop checking GitHub for new releases.                |
 | `SETUP_WINDOW_MINUTES` | `10`                 | How long the first-account screen stays open after a start or a reset.  |
 
-## Putting it online
+## Putting it online (HTTPS)
 
-- **HTTPS is required** for passkeys and for installing the PWA (only `localhost` is exempt). Put the app behind a reverse proxy that handles TLS. With Caddy, this is enough:
+**HTTPS is required** as soon as the app is reachable by anything but the machine it runs on:
 
-  ```
-  budget.example.com {
-      reverse_proxy localhost:3000
-  }
-  ```
+| Feature | Without HTTPS |
+| ------- | ------------- |
+| **Passkeys** (WebAuthn) | refused by the browser |
+| **Installing the PWA**, push notifications | refused by the browser |
+| **MCP server** | refused by the app itself (HTTP 403): a bearer token in clear text is a password in clear text |
+| Session cookie | not marked `Secure` |
 
-- The proxy must forward the original `Host` header. Next.js server actions reject requests whose `Origin` does not match the host (CSRF protection).
-- `ORIGIN` must match the URL typed in the browser exactly. If you change domains, existing passkeys stop working.
-- The proxy must forward `X-Forwarded-For` (or `X-Real-IP`): sign-in attempts are rate-limited per IP address. Caddy, Traefik and nginx (with `proxy_set_header`) all do this.
+`http://localhost` is the only exception, so you can try everything on the machine itself. For a phone or another computer on your network, use a real domain with a certificate (Let's Encrypt, a [Cloudflare Tunnel](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/), `tailscale serve`…): a bare `http://192.168.x.x:3000` will not work.
+
+The app itself speaks plain HTTP on port 3000 and **does not handle certificates**. A reverse proxy in front of it does, whichever way you run it. Three rules for that proxy:
+
+1. **`ORIGIN`** is the exact public URL, `https://budget.example.com`, no trailing slash. It sets the passkey domain and the MCP address, and the app checks it against the `Host` header.
+2. It forwards the original **`Host`** header (Next.js server actions reject a mismatched `Origin`, and `/mcp` rejects a wrong `Host`).
+3. It forwards **`X-Forwarded-For`** (sign-in and token attempts are rate-limited per IP) and **`X-Forwarded-Proto`**. Caddy, Traefik and nginx with `proxy_set_header` do.
+
+Changing the domain later breaks existing passkeys: they are bound to it.
+
+### With Docker
+
+The simplest setup is [Caddy](https://caddyserver.com), which gets and renews the certificate on its own. You need a domain pointing at your server and ports 80 and 443 open. Edit `docker-compose.yml`: remove the `ports:` of `economy` (the proxy reaches it on the Docker network, nothing else can) and add a `caddy` service:
+
+```yaml
+services:
+  economy:
+    image: ghcr.io/midnights-ra1n/economy:latest
+    restart: unless-stopped
+    environment:
+      ORIGIN: https://budget.example.com
+      TZ: Europe/Paris
+    volumes:
+      - economy-data:/data
+
+  caddy:
+    image: caddy:2
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data   # certificates: keep them across restarts
+
+volumes:
+  economy-data:
+    name: economy-data
+  caddy-data:
+```
+
+and next to it a `Caddyfile`:
+
+```
+budget.example.com {
+    reverse_proxy economy:3000
+}
+```
+
+Caddy sends `Host`, `X-Forwarded-For` and `X-Forwarded-Proto` by itself. Then `docker compose up -d`; the first request to the domain may take a few seconds while the certificate is issued.
+
+Already have a proxy (Traefik, Nginx Proxy Manager, Synology, a Cloudflare Tunnel…)? Keep the app's `ports:` as `"127.0.0.1:3000:3000"` (or none, on a shared Docker network) and point the proxy at `economy:3000`. Do not publish port 3000 to the Internet: it would also serve the app without HTTPS.
+
+With plain `docker run`, use `-p 127.0.0.1:3000:3000` and a proxy on the host (see below).
+
+### Without Docker (.deb, or from source)
+
+The `.deb` listens on all interfaces by default. Put the proxy on the same machine and make the app listen on localhost only:
+
+1. in `/etc/economy/economy.env`, set `ORIGIN=https://budget.example.com` and uncomment `HOSTNAME=127.0.0.1`;
+2. install a proxy. With Caddy ([install](https://caddyserver.com/docs/install#debian-ubuntu-raspbian)), `/etc/caddy/Caddyfile`:
+
+   ```
+   budget.example.com {
+       reverse_proxy 127.0.0.1:3000
+   }
+   ```
+
+3. `sudo systemctl restart economy caddy`, and open ports 80 and 443 on your firewall or router (80 is needed to obtain the certificate).
+
+With nginx and certbot instead (`sudo certbot --nginx -d budget.example.com` adds the certificate and the redirect), the site's `location /` block needs:
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+From source (`pnpm start`), run it the same way: `HOSTNAME=127.0.0.1 ORIGIN=https://budget.example.com pnpm start`, behind the same proxy.
+
+**Check it**: open `https://budget.example.com`, sign in, add a passkey in **Settings → Passkeys**. If the browser refuses, `ORIGIN` does not match the address bar. Check MCP with `curl -i -X POST https://budget.example.com/mcp`: `401` means it is reachable and wants a token; `403` says why it refuses (HTTPS, Host or Origin).
+
+## MCP server (AI assistants)
+
+The app speaks the [Model Context Protocol](https://modelcontextprotocol.io) (Streamable HTTP transport, stateless, protocol versions 2024-11 to 2025-11) at **`https://budget.example.com/mcp`**. Any compliant client can use it: Claude, ChatGPT, Cursor, VS Code, Gemini CLI, Zed…
+
+1. Over HTTPS (see above), go to **Settings → AI assistants (MCP)**.
+2. Name a token (for example "Claude"), choose **Read only** or **Read and add**, and create it. It is shown **once**: copy it.
+3. Give your client the address and the header `Authorization: Bearer <token>`:
+
+   ```bash
+   # Claude Code
+   claude mcp add --transport http economy https://budget.example.com/mcp \
+     --header "Authorization: Bearer eco_..."
+   ```
+
+   ```jsonc
+   // Cursor (.cursor/mcp.json), VS Code (.vscode/mcp.json, key "servers"), Gemini CLI… same shape
+   { "mcpServers": { "economy": { "url": "https://budget.example.com/mcp", "headers": { "Authorization": "Bearer eco_..." } } } }
+   ```
+
+   ```jsonc
+   // Clients that only run local (stdio) servers, such as Claude Desktop, go through the mcp-remote bridge
+   { "mcpServers": { "economy": { "command": "npx", "args": ["-y", "mcp-remote", "https://budget.example.com/mcp", "--header", "Authorization: Bearer ${ECONOMY_TOKEN}"], "env": { "ECONOMY_TOKEN": "eco_..." } } } }
+   ```
+
+| Tool | Access | What it does |
+| ---- | ------ | ------------ |
+| `get_context` | read | today's date, currency, and the **context** you wrote for assistants |
+| `get_overview` | read | total balance, income and spending this month, projected end-of-month total, all warnings |
+| `list_accounts` | read | accounts, balances, minimum-balance rules and ceilings |
+| `list_transactions` | read | transactions of a month or of a date range (up to 366 days), optionally of one account |
+| `get_spending_summary` | read | income, spending by category, and the previous month for comparison |
+| `list_subscriptions` | read | subscriptions, bills, salary, standing transfers |
+| `list_planned` | read | planned one-off operations |
+| `get_forecast` | read | projected balances for up to 12 months, with rule and ceiling warnings |
+| `can_afford` | read | **simulates a purchase** without recording it: balance month by month, the rule it would break, the lowest balance, and the earliest month where it breaks nothing |
+| `add_transaction` | read and add | records an expense or an income |
+| `add_planned` | read and add | plans an operation for a date |
+
+So you can ask your assistant "can I spend €300 on a new phone, or should I wait?": it reads your context and overview, simulates the purchase with `can_afford`, and answers from your real figures. A read-only token is enough for that.
+
+**Context.** In **Settings → AI assistants (MCP) → Context for assistants**, write what an assistant should know to advise you: goals ("keep €1,500 in my current account", "saving for a trip in June"), habits, personal rules ("purchases over €200 deserve a week's thought"). It is sent to the client when it connects and by `get_context`. Only you can edit it, never an assistant. It is not encrypted, so keep secrets out of it.
+
+**Security model**
+
+- **HTTPS only.** The app refuses `/mcp` unless `ORIGIN` is `https://` (`localhost` excepted), and refuses requests that came to the proxy in plain HTTP.
+- **One token per client and per user**, 256 random bits. Only its SHA-256 is stored, so a stolen database contains no usable token. A token only ever sees its owner's data, with the same per-user filtering as the web app.
+- **Least privilege**: read-only by default, and **nothing can be deleted or modified** through MCP, not even with a write token. Mistakes are fixed in the app.
+- **Revoke** a token in Settings at any time (instant). Deleting a user deletes their tokens. The settings page shows each token's last use.
+- Brute-force guard shared with the sign-in form (5 failures lock an IP for 15 minutes), `Host` and `Origin` checks against DNS rebinding, requests capped at 64 KB.
+- Amounts are in your display currency, expenses negative. Labels you typed are returned to the model as data: avoid connecting an assistant you do not trust with your finances to a write token.
+
+Limits: authentication is a static bearer token, not OAuth. That covers every client that accepts custom headers (the list above), but not "custom connectors" that can only sign in through OAuth, such as the claude.ai web interface or the ChatGPT web app. Tokens do not expire on their own: revoke the ones you no longer use.
 
 ## Data, updates and backups
 
@@ -253,6 +391,7 @@ Strings live in [`lib/i18n.ts`](lib/i18n.ts). To add a language, add a dictionar
 - Every page and server action checks the session again, and admin actions check the role again. Every query on banking data is filtered by user, and account ids sent by forms are verified.
 - Deleted data is overwritten (`PRAGMA secure_delete`). A full reset also empties the WAL journal and compacts the database.
 - The SMTP password is the only secret the app must read back: it is encrypted with a key kept outside the database (`/data/secret.key`, mode 600) and never shown again in the interface.
+- The MCP server needs HTTPS, authenticates with revocable hashed tokens, is read-only by default and never deletes ([details](#mcp-server-ai-assistants)).
 - Security headers are set (HSTS, `X-Frame-Options`, `nosniff`, …), and the app asks search engines not to index it.
 
 ## Development
@@ -277,5 +416,6 @@ lib/i18n.ts    French and English strings
 lib/statement.ts  statement periods and figures (pure, tested)
 lib/pdf.ts     PDF statement (pdfkit, Geist fonts from assets/fonts)
 lib/mail.ts    statement e-mail (nodemailer)
+lib/mcp.ts     MCP server: tokens, JSON-RPC, tools (route: app/mcp/route.ts)
 lib/reports.ts storage, scheduler, e-mail and cleanup of statements
 ```

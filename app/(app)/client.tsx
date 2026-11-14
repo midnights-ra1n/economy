@@ -26,7 +26,7 @@ export function MessageForm({
     <form action={run} className={className} aria-busy={pending}>
       {children}
       {(state.error || state.ok) && (
-        <p role="status" className={`anim-rise text-sm ${state.error ? "text-loss" : "text-gain"}`}>{state.error ?? state.ok}</p>
+        <p role="status" className={`anim-rise break-words text-sm ${state.error ? "text-loss" : "text-gain"}`}>{state.error ?? state.ok}</p>
       )}
     </form>
   );

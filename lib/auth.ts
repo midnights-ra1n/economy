@@ -27,6 +27,9 @@ export const currentUser = cache(async (): Promise<User | null> => {
   `).get(sha256(token), Date.now()) as User | undefined) ?? null;
 });
 
+/** Display currency of the logged-in user. Amounts are not converted: it is a display unit. */
+export const getCurrency = async () => (await currentUser())?.currency ?? "EUR";
+
 export const isLoggedIn = async () => !!(await currentUser());
 
 /** Call at the top of every page, route and server action that touches budget data. */

@@ -151,6 +151,17 @@ function migrate(d: DatabaseSync) {
     `),
     // v9: small logo of a subscription (data URI of a 64 px PNG, resized in the browser).
     () => d.exec("ALTER TABLE recurring ADD COLUMN logo TEXT"),
+    // v10: access tokens of the MCP server (only their SHA-256 is stored), read-only or read-write.
+    () => d.exec(`
+      CREATE TABLE api_tokens (
+        id INTEGER PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+        name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, scope TEXT NOT NULL CHECK (scope IN ('read','write')),
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), last_used TEXT
+      );
+      CREATE INDEX api_tokens_user ON api_tokens(user_id);
+    `),
+    // v11: free text the user gives to AI assistants (goals, habits, rules of thumb), served by the MCP server.
+    () => d.exec("ALTER TABLE users ADD COLUMN mcp_context TEXT"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {

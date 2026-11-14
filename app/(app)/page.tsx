@@ -1,6 +1,6 @@
 import Link from "next/link";
-import { requireUser } from "@/lib/auth";
-import { getAccounts, getCurrency, getPlanned, getRecurring, getTransactions, postDueRecurring, type Transaction } from "@/lib/budget";
+import { getCurrency, requireUser } from "@/lib/auth";
+import { getAccounts, getPlanned, getRecurring, getTransactions, postDueRecurring, type Transaction } from "@/lib/budget";
 import { addMonths, cumulativeSpending as cumulative, dayInMonth, fmt, forecast, localToday, occursIn, reminders, ym } from "@/lib/forecast";
 import { getT } from "@/lib/locale";
 import { MonthCalendar } from "./calendar";

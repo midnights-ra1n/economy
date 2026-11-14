@@ -4,11 +4,15 @@ import { createHash } from "node:crypto";
 import path from "node:path";
 
 const dir = process.env.DATA_DIR ?? path.join(process.cwd(), "data");
-// turbopackIgnore: the data dir is runtime state, not something to trace into the build output.
-mkdirSync(/*turbopackIgnore: true*/ dir, { recursive: true });
-// Only the app's OS user may read the database (mode is ignored by mkdir when the dir already exists).
-chmodSync(/*turbopackIgnore: true*/ dir, 0o700);
-const file = path.join(dir, "economy.db");
+// `next build` loads every route in parallel workers just to read their config: they must not share (or create) the real file.
+const building = process.env.NEXT_PHASE === "phase-production-build";
+if (!building) {
+  // turbopackIgnore: the data dir is runtime state, not something to trace into the build output.
+  mkdirSync(/*turbopackIgnore: true*/ dir, { recursive: true });
+  // Only the app's OS user may read the database (mode is ignored by mkdir when the dir already exists).
+  chmodSync(/*turbopackIgnore: true*/ dir, 0o700);
+}
+const file = building ? ":memory:" : path.join(dir, "economy.db");
 
 // One connection per server process; reused across hot reloads in dev.
 const g = globalThis as unknown as { db?: DatabaseSync };
@@ -51,8 +55,8 @@ function open() {
     );
   `);
   migrate(d);
-  for (const f of [file, `${file}-wal`, `${file}-shm`]) if (existsSync(/*turbopackIgnore: true*/ f)) chmodSync(/*turbopackIgnore: true*/ f, 0o600);
-  if (process.env.NEXT_PHASE !== "phase-production-build") {
+  if (!building) for (const f of [file, `${file}-wal`, `${file}-shm`]) if (existsSync(/*turbopackIgnore: true*/ f)) chmodSync(/*turbopackIgnore: true*/ f, 0o600);
+  if (!building) {
     const { n } = d.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number };
     log(`Database ${file}: ${n} user(s).`);
     if (!persistent()) log(`WARNING: ${dir} is not a mounted volume. Data will be lost when the container is recreated.`);

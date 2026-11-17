@@ -95,6 +95,8 @@ export default async function Dashboard() {
               </p>
               {a.bank && <p className="-mt-1 truncate text-xs text-bar-muted">{a.bank}</p>}
               <p className="text-lg font-medium"><Money cents={a.balance} /></p>
+              {/* The balance already counts them; the bank's shows them apart until they are debited. */}
+              {a.pending !== 0 && <p className="text-xs text-bar-muted">{t("ops.pending")} <Money cents={a.pending} signed /></p>}
               <p className="text-xs text-bar-muted">
                 {t("dash.endOf", { month: monthName(month, "short") })}{" "}
                 <Money cents={months[0].balances[a.id]} className={months[0].balances[a.id] < a.balance ? "text-bar-loss" : "text-bar-gain"} />

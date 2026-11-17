@@ -3,7 +3,7 @@ import { DEFAULT_CEILING, duePosts, localToday, type Account, type Planned, type
 
 export type RecurringRow = Recurring & { category: string | null };
 export type PlannedRow = Planned & { category: string | null };
-export type Transaction = { id: number; account_id: number; label: string; amount: number; date: string; category: string | null };
+export type Transaction = { id: number; account_id: number; label: string; amount: number; date: string; category: string | null; pending: number };
 
 // Every budget row belongs to a user through its account: all reads and writes are scoped by user id.
 export const OWN = "account_id IN (SELECT id FROM accounts WHERE user_id = ?)";
@@ -15,9 +15,10 @@ export const getAccounts = (uid: number) =>
   (db.prepare(`
     SELECT a.id, a.name, a.kind, a.product, a.bank, a.min_balance, a.initial_balance, a.ceiling,
            a.initial_balance + COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id), 0) AS balance,
-           COALESCE(a.deposits_base, 0) + ${PEA_DEPOSITS} AS deposits
+           COALESCE(a.deposits_base, 0) + ${PEA_DEPOSITS} AS deposits,
+           COALESCE((SELECT SUM(amount) FROM transactions t WHERE t.account_id = a.id AND t.pending), 0) AS pending
     FROM accounts a WHERE a.user_id = ? ORDER BY a.kind, a.bank IS NULL, a.bank, a.name
-  `).all(uid) as (Account & { initial_balance: number; deposits: number })[])
+  `).all(uid) as (Account & { initial_balance: number; deposits: number; pending: number })[])
     .map((a) => ({
       ...a,
       ceiling: a.ceiling ?? DEFAULT_CEILING[a.product ?? ""] ?? null,
@@ -29,6 +30,10 @@ export const getPlanned = (uid: number) => db.prepare(`SELECT * FROM planned WHE
 
 export const getTransactions = (uid: number, month: string) =>
   db.prepare(`SELECT * FROM transactions WHERE ${OWN} AND date LIKE ? ORDER BY date DESC, id DESC`).all(uid, `${month}-%`) as Transaction[];
+
+/** Operations not yet debited by the bank, oldest first, whatever their month. */
+export const getPending = (uid: number) =>
+  db.prepare(`SELECT * FROM transactions WHERE ${OWN} AND pending ORDER BY date, id`).all(uid) as Transaction[];
 
 /** The other side of a transfer, stored as two operations: same label and date, opposite amount, another account. */
 export const transferTwin = (uid: number, t: Transaction) =>

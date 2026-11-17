@@ -294,14 +294,15 @@ bearer_token_env_var = "ECONOMY_TOKEN"
 | ---- | ------ | ------------ |
 | `get_context` | read | today's date, currency, and the **context** you wrote for assistants |
 | `get_overview` | read | total balance, income and spending this month, projected end-of-month total, all warnings |
-| `list_accounts` | read | accounts, balances, minimum-balance rules and ceilings |
+| `list_accounts` | read | accounts, balances (with the amount still pending), minimum-balance rules and ceilings |
 | `list_transactions` | read | transactions of a month or of a date range (up to 366 days), optionally of one account |
 | `get_spending_summary` | read | income, spending by category, and the previous month for comparison |
 | `list_subscriptions` | read | subscriptions, bills, salary, standing transfers |
 | `list_planned` | read | planned one-off operations |
+| `list_upcoming` | read | what is still to come: operations not yet debited by the bank, then subscriptions and planned operations due in the next days (30 by default, up to 92) |
 | `get_forecast` | read | projected balances for up to 12 months, with rule and ceiling warnings |
 | `can_afford` | read | **simulates a purchase** without recording it: balance month by month, the rule it would break, the lowest balance, and the earliest month where it breaks nothing |
-| `add_transaction` | read and add | records an expense or an income |
+| `add_transaction` | read and add | records an expense or an income, optionally as pending (not yet debited) |
 | `add_planned` | read and add | plans an operation for a date |
 
 So you can ask your assistant "can I spend €300 on a new phone, or should I wait?": it reads your context and overview, simulates the purchase with `can_afford`, and answers from your real figures. A read-only token is enough for that.

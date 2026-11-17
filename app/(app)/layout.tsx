@@ -31,7 +31,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <NavLinks admin={user?.role === "admin"} />
           {accounts.length > 0 && (
             <QuickAdd>
-              <EntryForm action={addTransaction} accounts={accounts} categories={getCategories(user!.id)} when="date" today={localToday()} />
+              <EntryForm action={addTransaction} accounts={accounts} categories={getCategories(user!.id)} when="date" today={localToday()} pendable />
             </QuickAdd>
           )}
         </div>

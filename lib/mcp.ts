@@ -3,8 +3,8 @@
 // Tokens are per user, shown once, stored hashed, and either read-only or read-write. No tool deletes anything.
 import { randomBytes } from "node:crypto";
 import { db, sha256 } from "./db.ts";
-import { OWN, getAccounts, getPlanned, getRecurring, getTransactions } from "./budget.ts";
-import { addMonths, forecast, localToday, parseCents, ym } from "./forecast.ts";
+import { OWN, getAccounts, getPending, getPlanned, getRecurring, getTransactions } from "./budget.ts";
+import { addDays, addMonths, duePosts, forecast, localToday, parseCents, ym } from "./forecast.ts";
 
 const PROTOCOLS = ["2025-11-25", "2025-06-18", "2025-03-26", "2024-11-05"]; // newest first
 export type Scope = "read" | "write";
@@ -112,10 +112,10 @@ const TOOLS: {
 }[] = [
   {
     name: "list_accounts", annotations: READ, inputSchema: obj({}),
-    description: "The user's accounts with current balance, minimum-balance rule and deposit ceiling. Amounts are in the user's currency.",
+    description: "The user's accounts with current balance, minimum-balance rule and deposit ceiling. Amounts are in the user's currency. `balance` already counts the operations not yet debited by the bank (`pending`): the bank shows balance - pending.",
     run: ({ uid }) => getAccounts(uid).map((a) => ({
       id: a.id, name: a.name, bank: a.bank, kind: a.kind, product: a.product,
-      balance: eur(a.balance), min_balance: eur(a.min_balance), ceiling: eur(a.ceiling),
+      balance: eur(a.balance), pending: eur(a.pending), min_balance: eur(a.min_balance), ceiling: eur(a.ceiling),
     })),
   },
   {
@@ -196,7 +196,7 @@ const TOOLS: {
       to: { type: "string", description: "YYYY-MM-DD, inclusive." },
       account_id: ACCOUNT_ID,
     }),
-    description: "Transactions of a month or of a date range (at most 1000, newest first). Transfers between accounts appear as two lines with category \"Virement\".",
+    description: "Transactions of a month or of a date range (at most 1000, newest first). Transfers between accounts appear as two lines with category \"Virement\". `pending`: made but not yet debited by the bank.",
     run: ({ uid }, a) => {
       const account = a.account_id === undefined ? null : ownAccount(uid, a);
       let rows = getTransactions(uid, month(a));
@@ -206,7 +206,31 @@ const TOOLS: {
         rows = db.prepare(`SELECT * FROM transactions WHERE ${OWN} AND date BETWEEN ? AND ? ORDER BY date DESC, id DESC LIMIT 1000`).all(uid, from, to) as typeof rows;
       }
       return rows.filter((t) => account === null || t.account_id === account)
+        .map((t) => ({ id: t.id, account_id: t.account_id, date: t.date, label: t.label, amount: eur(t.amount), category: t.category, pending: !!t.pending }));
+    },
+  },
+  {
+    name: "list_upcoming", annotations: READ,
+    inputSchema: obj({
+      days: { type: "integer", minimum: 1, maximum: 92, description: "How far ahead, default 30." },
+      account_id: ACCOUNT_ID,
+    }),
+    description: "Operations still to come: those already made but not yet debited by the bank (`pending`, already counted in the balance), then subscription payments and planned operations due within `days` (not yet in the balance), soonest first.",
+    run: ({ uid }, a) => {
+      const account = a.account_id === undefined ? null : ownAccount(uid, a);
+      const until = addDays(localToday(), int(a, "days", 1, 92, 30));
+      const mine = (t: { account_id: number; to_account_id?: number | null }) => account === null || t.account_id === account || t.to_account_id === account;
+      const scheduled = [
+        ...getRecurring(uid).flatMap((r) => duePosts(r, until).map((date) => ({
+          source: "subscription", date, label: r.label, amount: eur(r.amount), account_id: r.account_id, to_account_id: r.to_account_id, category: r.category,
+        }))),
+        ...getPlanned(uid).filter((p) => p.date <= until).map((p) => ({
+          source: "planned", date: p.date, label: p.label, amount: eur(p.amount), account_id: p.account_id, to_account_id: null, category: p.category,
+        })),
+      ].filter(mine).sort((x, y) => x.date.localeCompare(y.date));
+      const pending = getPending(uid).filter(mine)
         .map((t) => ({ id: t.id, account_id: t.account_id, date: t.date, label: t.label, amount: eur(t.amount), category: t.category }));
+      return { until, pending, scheduled };
     },
   },
   {
@@ -239,14 +263,19 @@ const TOOLS: {
   {
     name: "add_transaction", annotations: WRITE, write: true,
     inputSchema: obj(
-      { account_id: ACCOUNT_ID, label: { type: "string", maxLength: 80 }, amount: AMOUNT, date: { type: "string", description: "YYYY-MM-DD, default: today." }, category: { type: "string", maxLength: 40 } },
+      {
+        account_id: ACCOUNT_ID, label: { type: "string", maxLength: 80 }, amount: AMOUNT, date: { type: "string", description: "YYYY-MM-DD, default: today." },
+        category: { type: "string", maxLength: 40 },
+        pending: { type: "boolean", description: "Made but not yet debited by the bank (card payments often take 1 to 3 days). Default false." },
+      },
       ["account_id", "label", "amount"],
     ),
     description: "Records a transaction (expense or income) on an account. It cannot be deleted through MCP.",
     run: ({ uid }, a) => {
+      if (a.pending !== undefined && typeof a.pending !== "boolean") throw new Error('"pending" must be true or false');
       const row = { account: ownAccount(uid, a), label: str(a, "label"), cents: amount(a), date: date(a, "date"), category: optStr(a, "category") };
-      const { lastInsertRowid } = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)")
-        .run(row.account, row.label, row.cents, row.date, row.category);
+      const { lastInsertRowid } = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category, pending) VALUES (?, ?, ?, ?, ?, ?)")
+        .run(row.account, row.label, row.cents, row.date, row.category, Number(a.pending === true));
       return { id: Number(lastInsertRowid) };
     },
   },

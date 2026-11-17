@@ -89,3 +89,19 @@ test("context reaches the assistant through initialize and get_context", () => {
   assert.equal(JSON.parse(call({ uid: alice, scope: "read" }, "get_context").result!.content[0].text).user_context, "Je garde 1500 euros de côté");
   assert.doesNotMatch((mcp.handleMessage({ jsonrpc: "2.0", id: 1, method: "initialize", params: {} }, { uid: bob, scope: "read" }) as { result: { instructions: string } }).result.instructions, /1500/);
 });
+
+test("pending operations: add_transaction flags them, list_upcoming lists them with what is due soon", async () => {
+  const { addDays, addMonths, localToday, ym } = await import("./forecast.ts");
+  const carol = user("carol"), acc = account(carol), today = localToday();
+  const w = { uid: carol, scope: "write" } as const;
+  call(w, "add_transaction", { account_id: acc, label: "Carte", amount: -30, pending: true });
+  assert.equal(call(w, "add_transaction", { account_id: acc, label: "x", amount: -1, pending: "yes" }).result?.isError, true);
+  db.prepare("INSERT INTO recurring (account_id, label, amount, day, last_posted) VALUES (?, 'Netflix', -1399, 28, ?)").run(acc, addMonths(ym(today), -1));
+  db.prepare("INSERT INTO planned (account_id, label, amount, date) VALUES (?, 'Loin', -5000, ?)").run(acc, addDays(today, 200));
+  const up = JSON.parse(call(w, "list_upcoming", { days: 92 }).result!.content[0].text);
+  assert.deepEqual(up.pending.map((t: { label: string; amount: number }) => [t.label, t.amount]), [["Carte", -30]]);
+  assert.ok(up.scheduled.length >= 3 && up.scheduled.every((s: { label: string }) => s.label === "Netflix")); // 92 days: 3 or 4 payments, not "Loin"
+  const [a] = JSON.parse(call(w, "list_accounts").result!.content[0].text);
+  assert.deepEqual([a.balance, a.pending], [70, -30]); // the balance already counts it
+  assert.equal(JSON.parse(call({ uid: bob, scope: "read" }, "list_upcoming").result!.content[0].text).pending.length, 0);
+});

@@ -66,17 +66,32 @@ async function done(calendarOf?: number) {
   revalidatePath("/", "layout");
 }
 
-function insertTransaction(e: ReturnType<typeof entry>, d: string) {
-  const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category) VALUES (?, ?, ?, ?, ?)");
-  insert.run(e.account_id, e.label, e.amount, d, e.category);
-  if (e.to_account_id) insert.run(e.to_account_id, e.label, -e.amount, d, e.category);
+function insertTransaction(e: ReturnType<typeof entry>, d: string, pending: boolean) {
+  const insert = db.prepare("INSERT INTO transactions (account_id, label, amount, date, category, pending) VALUES (?, ?, ?, ?, ?, ?)");
+  insert.run(e.account_id, e.label, e.amount, d, e.category, Number(pending));
+  if (e.to_account_id) insert.run(e.to_account_id, e.label, -e.amount, d, e.category, Number(pending));
 }
 
 export async function addTransaction(form: FormData) {
   const { id: uid } = await requireUser();
   const e = entry(uid, form);
   const d = date(form);
-  tx(() => insertTransaction(e, d));
+  tx(() => insertTransaction(e, d, form.has("pending")));
+  await done();
+}
+
+/** The bank has debited a pending operation (both sides of a transfer): it now bears the day of the click. */
+export async function clearPending(form: FormData) {
+  const { id: uid } = await requireUser();
+  const t = db.prepare(`SELECT * FROM transactions WHERE id = ? AND ${OWN}`).get(id(form), uid) as Transaction | undefined;
+  if (!t) throw new Error("Unknown operation");
+  const clear = db.prepare("UPDATE transactions SET pending = 0, date = ? WHERE id = ?");
+  const today = localToday();
+  tx(() => {
+    const twin = transferTwin(uid, t); // found by the old date: look it up first
+    clear.run(today, t.id);
+    if (twin) clear.run(today, twin.id);
+  });
   await done();
 }
 
@@ -92,7 +107,7 @@ export async function updateTransaction(form: FormData) {
     const twin = transferTwin(uid, old);
     del.run(old.id);
     if (twin) del.run(twin.id);
-    insertTransaction(e, d);
+    insertTransaction(e, d, form.has("pending"));
   });
   await done();
 }
@@ -255,7 +270,7 @@ export async function importData(_: { error?: string; ok?: string }, form: FormD
           `INSERT INTO ${table} (${[...cols, ...(table === "accounts" ? ["user_id"] : [])].join(", ")}) VALUES (${cols.map(() => "?").join(", ")}${table === "accounts" ? ", ?" : ""})`,
         );
         for (const row of backup[table]) {
-          const values = cols.map((c) => (c === "account_id" || c === "to_account_id" ? ref(row[c]) : ((row[c] ?? (c === "every" ? 1 : null)) as number | string | null)));
+          const values = cols.map((c) => (c === "account_id" || c === "to_account_id" ? ref(row[c]) : ((row[c] ?? (c === "every" ? 1 : c === "pending" ? 0 : null)) as number | string | null)));
           const { lastInsertRowid } = insert.run(...values, ...(table === "accounts" ? [uid] : []));
           if (table === "accounts") accountIds.set(row.id, Number(lastInsertRowid));
         }

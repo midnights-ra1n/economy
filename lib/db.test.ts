@@ -30,13 +30,14 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
   old.close();
 
   const db = await openDb(dir, "v0");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 13);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 14);
   assert.deepEqual({ ...db.prepare("SELECT id, username, password_hash, role, currency FROM users").get() },
     { id: 1, username: "moi", password_hash: "scrypt:aa:bb", role: "admin", currency: "USD" });
   for (const t of ["accounts", "credentials", "sessions"]) {
     assert.equal((db.prepare(`SELECT user_id FROM ${t}`).get() as { user_id: number }).user_id, 1, t);
   }
-  assert.equal((db.prepare("SELECT COUNT(*) AS n FROM transactions").get() as { n: number }).n, 1);
+  // Existing operations count as already debited.
+  assert.equal((db.prepare("SELECT pending FROM transactions").get() as { pending: number }).pending, 0);
   assert.equal(db.prepare("SELECT 1 FROM settings WHERE key IN ('username', 'password_hash', 'currency')").get(), undefined);
   // Deleting the user cascades to all of its data.
   db.exec("DELETE FROM users");
@@ -45,7 +46,7 @@ test("a single-user (v0) database upgrades in place: the owner becomes admin and
 
 test("a fresh database gets the current schema and opens the account creation window", async () => {
   const db = await openDb(mkdtempSync(path.join(tmpdir(), "economy-")), "fresh");
-  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 13);
+  assert.equal((db.prepare("PRAGMA user_version").get() as { user_version: number }).user_version, 14);
   assert.equal((db.prepare("SELECT COUNT(*) AS n FROM users").get() as { n: number }).n, 0);
   const { setupMinutesLeft } = (await import(`./db.ts?${"fresh"}`)) as typeof import("./db.ts"); // same instance as openDb
   assert.ok(setupMinutesLeft() > 0 && setupMinutesLeft() <= 10);

@@ -34,7 +34,10 @@ export const SCHEMA = {
     product: optional((v) => ["livret_a", "livret_jeune", "pea", "resto", "cash", "cash_reserve"].includes(v as string)), bank: optional(text(40)),
     ceiling: optional(int), deposits_base: optional(int),
   },
-  transactions: { id: int, account_id: int, label: text(80), amount: int, date, category: optional(text(40)) },
+  transactions: {
+    id: int, account_id: int, label: text(80), amount: int, date, category: optional(text(40)),
+    pending: optional((v) => v === 0 || v === 1), // optional: older backups restore as debited
+  },
   recurring: {
     id: int, account_id: int, to_account_id: optional(int), label: text(80), amount: int,
     day: (v: unknown) => int(v) && (v as number) >= 1 && (v as number) <= 31, category: optional(text(40)), last_posted: month,

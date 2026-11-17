@@ -107,7 +107,7 @@ const segment =
  * the rest has sensible defaults (first account, today). `values` pre-fills it to edit an existing row.
  */
 export async function EntryForm({
-  action, accounts, categories, when, today, transfer = true, submit, values: v,
+  action, accounts, categories, when, today, transfer = true, pendable, submit, values: v,
 }: {
   action: (f: FormData) => Promise<void>;
   accounts: Account[];
@@ -115,6 +115,8 @@ export async function EntryForm({
   when: "date" | "day";
   today: string;
   transfer?: boolean;
+  /** Real operations only: may still be waiting for the bank to debit it. */
+  pendable?: boolean;
   submit?: string;
   values?: EntryValues;
 }) {
@@ -183,6 +185,12 @@ export async function EntryForm({
           </>
         )}
       </div>
+      {pendable && (
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" name="pending" defaultChecked={!!v?.pending} className="mt-0.5 size-4 accent-[var(--accent)]" />
+          <span>{t("entry.pending")} <span className="block text-xs text-muted">{t("entry.pendingHelp")}</span></span>
+        </label>
+      )}
       <button className={`${button} w-full py-3`}>{submit ?? t("common.add")}</button>
     </form>
   );
@@ -191,7 +199,7 @@ export async function EntryForm({
 export type EntryValues = {
   id: number; type: "depense" | "revenu" | "virement"; amount: number; label: string;
   account_id: number; to_account_id?: number | null; category: string | null; date?: string; day?: number;
-  every?: number; next?: string; remind?: string | null; logo?: string | null;
+  every?: number; next?: string; remind?: string | null; logo?: string | null; pending?: number;
 };
 
 /** Values of a stored row (signed amount, "Virement" category) as the entry form takes them. */

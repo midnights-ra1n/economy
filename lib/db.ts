@@ -186,6 +186,8 @@ function migrate(d: DatabaseSync) {
       UPDATE accounts SET product = product_old;
       ALTER TABLE accounts DROP COLUMN product_old;
     `),
+    // v14: operations made but not yet debited by the bank (card payments at Crédit Agricole take 1 to 3 days).
+    () => d.exec("ALTER TABLE transactions ADD COLUMN pending INTEGER NOT NULL DEFAULT 0"),
   ];
   const version = (d.prepare("PRAGMA user_version").get() as { user_version: number }).user_version;
   for (let v = version; v < steps.length; v++) {
